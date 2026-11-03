@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ClubCategory, ClubPlayer } from '../types/club';
 import { getRatingCategory } from '../utils/eloCalc';
-import { Search, Trophy, ArrowUpRight, ArrowDownRight, Eye, PlusCircle, Filter, Edit3, Trash2 } from 'lucide-react';
+import { Search, Trophy, ArrowUpRight, ArrowDownRight, Eye, PlusCircle, Filter, Edit3, Trash2, X } from 'lucide-react';
 
 interface ClubStandingsTableProps {
   players: ClubPlayer[];
@@ -21,6 +21,7 @@ export const ClubStandingsTable: React.FC<ClubStandingsTableProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [sortBy, setSortBy] = useState<'rating' | 'gain' | 'games' | 'winrate'>('rating');
+  const [playerToDelete, setPlayerToDelete] = useState<ClubPlayer | null>(null);
 
   // Sorted and filtered players list
   const filteredPlayers = useMemo(() => {
@@ -237,11 +238,7 @@ export const ClubStandingsTable: React.FC<ClubStandingsTableProps> = ({
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm(`Delete ${player.name} from the club roster?`)) {
-                              onDeletePlayer(player.id);
-                            }
-                          }}
+                          onClick={() => setPlayerToDelete(player)}
                           className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
                           title="Delete Member"
                         >
@@ -256,6 +253,67 @@ export const ClubStandingsTable: React.FC<ClubStandingsTableProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Delete Member Confirmation Modal */}
+      {playerToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <button
+              onClick={() => setPlayerToDelete(null)}
+              className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Remove Club Member</h3>
+                <p className="text-xs text-slate-400">Remove player from active standings</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 mb-4 text-xs space-y-1.5">
+              <div className="font-semibold text-white text-sm flex items-center gap-2">
+                <span>{playerToDelete.name}</span>
+                <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-amber-300 font-mono">
+                  {playerToDelete.currentRating} Elo
+                </span>
+              </div>
+              <div className="text-slate-400">
+                Category: <span className="text-slate-200">{playerToDelete.category}</span> · {playerToDelete.gamesPlayed} games played ({playerToDelete.wins}W / {playerToDelete.draws}D / {playerToDelete.losses}L)
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 mb-5 leading-relaxed">
+              Are you sure you want to remove <strong className="text-white">{playerToDelete.name}</strong> from the roster?
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPlayerToDelete(null)}
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onDeletePlayer(playerToDelete.id);
+                  setPlayerToDelete(null);
+                }}
+                className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-500 transition-colors shadow-lg shadow-rose-950/50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Remove Member
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

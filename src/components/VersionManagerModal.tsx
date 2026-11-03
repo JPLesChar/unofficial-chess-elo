@@ -62,12 +62,18 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [errorFeedback, setErrorFeedback] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const showFeedback = (msg: string) => {
     setFeedback(msg);
     setTimeout(() => setFeedback(null), 3500);
+  };
+
+  const showErrorFeedback = (msg: string) => {
+    setErrorFeedback(msg);
+    setTimeout(() => setErrorFeedback(null), 4500);
   };
 
   // Save current state as Master Version
@@ -89,11 +95,9 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
   // Restore Master Version
   const handleRestoreMaster = () => {
     if (!masterVersion) return;
-    if (confirm('Restore to the Master Version? Current active changes will be replaced by the master baseline.')) {
-      onRestoreState(masterVersion.players, masterVersion.matches);
-      showFeedback('Restored to Master Version!');
-      onClose();
-    }
+    onRestoreState(masterVersion.players, masterVersion.matches);
+    showFeedback('Restored to Master Version!');
+    onClose();
   };
 
   // Create a named snapshot
@@ -119,11 +123,9 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
 
   // Restore a snapshot
   const handleRestoreSnapshot = (snap: ClubSnapshot) => {
-    if (confirm(`Restore to "${snap.name}"? Current state will be replaced with this version.`)) {
-      onRestoreState(snap.players, snap.matches);
-      showFeedback(`Restored to "${snap.name}"!`);
-      onClose();
-    }
+    onRestoreState(snap.players, snap.matches);
+    showFeedback(`Restored to "${snap.name}"!`);
+    onClose();
   };
 
   // Delete a snapshot
@@ -147,10 +149,10 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
           showFeedback('Imported backup file successfully!');
           onClose();
         } else {
-          alert('Invalid backup file format. Expected a valid ClubElo backup JSON.');
+          showErrorFeedback('Invalid backup file format. Expected a valid ClubElo backup JSON.');
         }
       } catch {
-        alert('Failed to parse the uploaded file. Please make sure it is a valid JSON file.');
+        showErrorFeedback('Failed to parse the uploaded file. Please make sure it is a valid JSON file.');
       }
     };
     reader.readAsText(file);
@@ -176,6 +178,13 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
             Keep a locked Master Version, create version milestones, and import previous club files
           </p>
         </div>
+
+        {errorFeedback && (
+          <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-950/50 p-3 text-xs font-semibold text-rose-300 flex items-center gap-2">
+            <X className="h-4 w-4" />
+            {errorFeedback}
+          </div>
+        )}
 
         {feedback && (
           <div className="mb-4 rounded-xl border border-emerald-500/40 bg-emerald-950/50 p-3 text-xs font-semibold text-emerald-300 flex items-center gap-2">

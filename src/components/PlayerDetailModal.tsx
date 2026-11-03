@@ -10,6 +10,7 @@ interface PlayerDetailModalProps {
   matches: ClubMatch[];
   onRecordMatchForPlayer: (player: ClubPlayer) => void;
   onEditPlayer: (player: ClubPlayer) => void;
+  onEditMatch?: (match: ClubMatch) => void;
 }
 
 export const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({
@@ -19,6 +20,7 @@ export const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({
   matches,
   onRecordMatchForPlayer,
   onEditPlayer,
+  onEditMatch,
 }) => {
   if (!isOpen || !player) return null;
 
@@ -349,21 +351,35 @@ export const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <div className="font-mono text-sm font-bold text-white tabular-nums">
-                        {endRating} Elo
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <div className="font-mono text-sm font-bold text-white tabular-nums">
+                          {endRating} Elo
+                        </div>
+                        <span
+                          className={`font-mono text-xs font-semibold tabular-nums ${
+                            delta > 0
+                              ? 'text-emerald-400'
+                              : delta < 0
+                              ? 'text-rose-400'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {delta > 0 ? `+${delta}` : delta}
+                        </span>
                       </div>
-                      <span
-                        className={`font-mono text-xs font-semibold tabular-nums ${
-                          delta > 0
-                            ? 'text-emerald-400'
-                            : delta < 0
-                            ? 'text-rose-400'
-                            : 'text-slate-400'
-                        }`}
-                      >
-                        {delta > 0 ? `+${delta}` : delta}
-                      </span>
+                      {onEditMatch && (
+                        <button
+                          onClick={() => {
+                            onClose();
+                            onEditMatch(m);
+                          }}
+                          className="rounded-lg p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                          title="Edit Game Result"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

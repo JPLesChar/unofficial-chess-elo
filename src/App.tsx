@@ -8,8 +8,9 @@ import { EnterResultModal } from './components/EnterResultModal';
 import { AddPlayerModal } from './components/AddPlayerModal';
 import { PlayerDetailModal } from './components/PlayerDetailModal';
 import { EditPlayerModal } from './components/EditPlayerModal';
+import { EditResultModal } from './components/EditResultModal';
 import { VersionManagerModal } from './components/VersionManagerModal';
-import { PlusCircle, UserPlus, Download, RefreshCw, Trophy, Users, History, BarChart3, RotateCcw, Bookmark } from 'lucide-react';
+import { PlusCircle, UserPlus, Download, RefreshCw, Trophy, Users, History, BarChart3, RotateCcw, Bookmark, AlertTriangle, X } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'standings' | 'matches' | 'stats'>('standings');
@@ -62,7 +63,19 @@ export default function App() {
   const [isAddPlayerOpen, setIsAddPlayerOpen] = useState<boolean>(false);
   const [selectedPlayer, setSelectedPlayer] = useState<ClubPlayer | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<ClubPlayer | null>(null);
+  const [editingMatch, setEditingMatch] = useState<ClubMatch | null>(null);
   const [isVersionManagerOpen, setIsVersionManagerOpen] = useState<boolean>(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState<boolean>(false);
+
+  // Keep selected player synced when roster updates
+  useEffect(() => {
+    if (selectedPlayer) {
+      const refreshed = players.find((p) => p.id === selectedPlayer.id);
+      if (refreshed) {
+        setSelectedPlayer(refreshed);
+      }
+    }
+  }, [players]);
 
   // Synchronize to localStorage
   useEffect(() => {
@@ -160,7 +173,7 @@ export default function App() {
 
           return {
             ...p,
-            currentRating: targetMatch.whiteRatingBefore,
+            currentRating: p.currentRating - targetMatch.whiteDelta,
             gamesPlayed: Math.max(0, p.gamesPlayed - 1),
             wins: isWin ? Math.max(0, p.wins - 1) : p.wins,
             draws: isDraw ? Math.max(0, p.draws - 1) : p.draws,
@@ -176,7 +189,7 @@ export default function App() {
 
           return {
             ...p,
-            currentRating: targetMatch.blackRatingBefore,
+            currentRating: p.currentRating - targetMatch.blackDelta,
             gamesPlayed: Math.max(0, p.gamesPlayed - 1),
             wins: isWin ? Math.max(0, p.wins - 1) : p.wins,
             draws: isDraw ? Math.max(0, p.draws - 1) : p.draws,
@@ -188,6 +201,89 @@ export default function App() {
         return p;
       })
     );
+  };
+
+  // Handle updating an existing match result with automatic rating recalculation
+  const handleUpdateMatch = (originalMatch: ClubMatch, updatedMatch: ClubMatch) => {
+    // 1. Update the match in the ledger
+    setMatches((prev) => prev.map((m) => (m.id === originalMatch.id ? updatedMatch : m)));
+
+    // 2. Adjust player ratings and records: rollback originalMatch, then apply updatedMatch
+    setPlayers((prev) => {
+      // First pass: rollback originalMatch
+      let updatedList = prev.map((p) => {
+        if (p.id === originalMatch.whitePlayerId) {
+          const isWin = originalMatch.result === '1-0';
+          const isDraw = originalMatch.result === '1/2-1/2';
+          const isLoss = originalMatch.result === '0-1';
+          return {
+            ...p,
+            currentRating: p.currentRating - originalMatch.whiteDelta,
+            gamesPlayed: Math.max(0, p.gamesPlayed - 1),
+            wins: isWin ? Math.max(0, p.wins - 1) : p.wins,
+            draws: isDraw ? Math.max(0, p.draws - 1) : p.draws,
+            losses: isLoss ? Math.max(0, p.losses - 1) : p.losses,
+            whiteWins: isWin ? Math.max(0, p.whiteWins - 1) : p.whiteWins,
+          };
+        }
+        if (p.id === originalMatch.blackPlayerId) {
+          const isWin = originalMatch.result === '0-1';
+          const isDraw = originalMatch.result === '1/2-1/2';
+          const isLoss = originalMatch.result === '1-0';
+          return {
+            ...p,
+            currentRating: p.currentRating - originalMatch.blackDelta,
+            gamesPlayed: Math.max(0, p.gamesPlayed - 1),
+            wins: isWin ? Math.max(0, p.wins - 1) : p.wins,
+            draws: isDraw ? Math.max(0, p.draws - 1) : p.draws,
+            losses: isLoss ? Math.max(0, p.losses - 1) : p.losses,
+            blackWins: isWin ? Math.max(0, p.blackWins - 1) : p.blackWins,
+          };
+        }
+        return p;
+      });
+
+      // Second pass: apply updatedMatch
+      updatedList = updatedList.map((p) => {
+        if (p.id === updatedMatch.whitePlayerId) {
+          const isWin = updatedMatch.result === '1-0';
+          const isDraw = updatedMatch.result === '1/2-1/2';
+          const isLoss = updatedMatch.result === '0-1';
+          const newRating = p.currentRating + updatedMatch.whiteDelta;
+          return {
+            ...p,
+            currentRating: newRating,
+            peakRating: Math.max(p.peakRating, newRating),
+            gamesPlayed: p.gamesPlayed + 1,
+            wins: isWin ? p.wins + 1 : p.wins,
+            draws: isDraw ? p.draws + 1 : p.draws,
+            losses: isLoss ? p.losses + 1 : p.losses,
+            whiteWins: isWin ? p.whiteWins + 1 : p.whiteWins,
+            lastActiveDate: updatedMatch.date,
+          };
+        }
+        if (p.id === updatedMatch.blackPlayerId) {
+          const isWin = updatedMatch.result === '0-1';
+          const isDraw = updatedMatch.result === '1/2-1/2';
+          const isLoss = updatedMatch.result === '1-0';
+          const newRating = p.currentRating + updatedMatch.blackDelta;
+          return {
+            ...p,
+            currentRating: newRating,
+            peakRating: Math.max(p.peakRating, newRating),
+            gamesPlayed: p.gamesPlayed + 1,
+            wins: isWin ? p.wins + 1 : p.wins,
+            draws: isDraw ? p.draws + 1 : p.draws,
+            losses: isLoss ? p.losses + 1 : p.losses,
+            blackWins: isWin ? p.blackWins + 1 : p.blackWins,
+            lastActiveDate: updatedMatch.date,
+          };
+        }
+        return p;
+      });
+
+      return updatedList;
+    });
   };
 
   // Add new player to roster
@@ -213,18 +309,13 @@ export default function App() {
   };
 
   // Reset all players to 0 games played and 1400 starting Elo
-  const handleResetAllTo1400 = () => {
-    if (
-      confirm(
-        'Reset all 40 club members to 0 games played and 1400 Elo? All match history will be cleared.'
-      )
-    ) {
-      setPlayers(INITIAL_CLUB_PLAYERS);
-      setMatches([]);
-      localStorage.setItem('club_elo_players_roster', JSON.stringify(INITIAL_CLUB_PLAYERS));
-      localStorage.setItem('club_elo_matches_ledger', JSON.stringify([]));
-      localStorage.setItem('club_elo_v3_reset_1400_clean', 'true');
-    }
+  const handleExecuteResetTo1400 = () => {
+    setPlayers(INITIAL_CLUB_PLAYERS);
+    setMatches([]);
+    localStorage.setItem('club_elo_players_roster', JSON.stringify(INITIAL_CLUB_PLAYERS));
+    localStorage.setItem('club_elo_matches_ledger', JSON.stringify([]));
+    localStorage.setItem('club_elo_v3_reset_1400_clean', 'true');
+    setIsResetConfirmOpen(false);
   };
 
   return (
@@ -330,7 +421,7 @@ export default function App() {
               Export
             </button>
             <button
-              onClick={handleResetAllTo1400}
+              onClick={() => setIsResetConfirmOpen(true)}
               className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               title="Reset all 40 club members to 0 games played and 1400 Elo"
             >
@@ -383,7 +474,11 @@ export default function App() {
             />
           </div>
         ) : activeTab === 'matches' ? (
-          <MatchHistoryLedger matches={matches} onDeleteMatch={handleDeleteMatch} />
+          <MatchHistoryLedger
+            matches={matches}
+            onDeleteMatch={handleDeleteMatch}
+            onEditMatch={(m) => setEditingMatch(m)}
+          />
         ) : (
           <div className="space-y-6">
             <ClubStatsOverview players={players} matches={matches} />
@@ -451,6 +546,7 @@ export default function App() {
           setIsEnterResultOpen(true);
         }}
         onEditPlayer={(p) => setEditingPlayer(p)}
+        onEditMatch={(m) => setEditingMatch(m)}
       />
 
       <EditPlayerModal
@@ -459,6 +555,14 @@ export default function App() {
         onClose={() => setEditingPlayer(null)}
         onUpdatePlayer={handleUpdatePlayer}
         onDeletePlayer={handleDeletePlayer}
+      />
+
+      <EditResultModal
+        isOpen={editingMatch !== null}
+        onClose={() => setEditingMatch(null)}
+        match={editingMatch}
+        players={players}
+        onUpdateMatch={handleUpdateMatch}
       />
 
       <VersionManagerModal
@@ -471,6 +575,52 @@ export default function App() {
           setMatches(newMatches);
         }}
       />
+
+      {/* Reset All to 1400 Confirmation Modal */}
+      {isResetConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+            <button
+              onClick={() => setIsResetConfirmOpen(false)}
+              className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Reset Club Roster</h3>
+                <p className="text-xs text-slate-400">Restore all 40 members to baseline</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 mb-5 leading-relaxed">
+              This will reset all 40 club members back to <strong className="text-amber-300">0 games played</strong> and <strong className="text-amber-300">1400 starting Elo</strong>. All match ledger records will be cleared.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsResetConfirmOpen(false)}
+                className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteResetTo1400}
+                className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-lg shadow-amber-500/20"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Yes, Reset All to 1400
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
