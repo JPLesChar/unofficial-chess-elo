@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { ClubMatch, ClubPlayer } from '../types/club';
+import { INITIAL_CLUB_PLAYERS } from '../data/initialClubRoster';
 import { X, Upload, Bookmark, RotateCcw, Clock, Trash2, Check, Download, ShieldCheck } from 'lucide-react';
 
 export interface ClubSnapshot {
@@ -40,7 +41,20 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
   const [masterVersion, setMasterVersion] = useState<ClubSnapshot | null>(() => {
     try {
       const saved = localStorage.getItem('club_elo_master_version');
-      return saved ? JSON.parse(saved) : null;
+      if (saved) return JSON.parse(saved);
+
+      // Auto-lock the clean 1400 baseline as default Master Version
+      const defaultMaster: ClubSnapshot = {
+        id: 'master_baseline_1400',
+        name: 'Master Baseline (40 Players @ 1400 Elo · 0 Games)',
+        date: 'Clean Master Template',
+        playersCount: INITIAL_CLUB_PLAYERS.length,
+        matchesCount: 0,
+        players: INITIAL_CLUB_PLAYERS,
+        matches: [],
+      };
+      localStorage.setItem('club_elo_master_version', JSON.stringify(defaultMaster));
+      return defaultMaster;
     } catch {
       return null;
     }
