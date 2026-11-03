@@ -8,7 +8,8 @@ import { EnterResultModal } from './components/EnterResultModal';
 import { AddPlayerModal } from './components/AddPlayerModal';
 import { PlayerDetailModal } from './components/PlayerDetailModal';
 import { EditPlayerModal } from './components/EditPlayerModal';
-import { PlusCircle, UserPlus, Download, RefreshCw, Trophy, Users, History, BarChart3, RotateCcw } from 'lucide-react';
+import { VersionManagerModal } from './components/VersionManagerModal';
+import { PlusCircle, UserPlus, Download, RefreshCw, Trophy, Users, History, BarChart3, RotateCcw, Bookmark } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'standings' | 'matches' | 'stats'>('standings');
@@ -61,6 +62,7 @@ export default function App() {
   const [isAddPlayerOpen, setIsAddPlayerOpen] = useState<boolean>(false);
   const [selectedPlayer, setSelectedPlayer] = useState<ClubPlayer | null>(null);
   const [editingPlayer, setEditingPlayer] = useState<ClubPlayer | null>(null);
+  const [isVersionManagerOpen, setIsVersionManagerOpen] = useState<boolean>(false);
 
   // Synchronize to localStorage
   useEffect(() => {
@@ -272,6 +274,15 @@ export default function App() {
           {/* Zone 3: 1 Primary Action (+ secondary controls) */}
           <div className="flex items-center gap-2.5 shrink-0">
             <button
+              onClick={() => setIsVersionManagerOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/15 px-3 py-2 text-xs font-bold text-amber-300 hover:bg-amber-500/25 transition-colors whitespace-nowrap shadow-sm"
+              title="Manage Master Version, Snapshots, and Import Backups"
+            >
+              <Bookmark className="h-3.5 w-3.5" />
+              Versions & Snapshots
+            </button>
+
+            <button
               onClick={() => setIsAddPlayerOpen(true)}
               className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 transition-colors whitespace-nowrap"
             >
@@ -316,15 +327,15 @@ export default function App() {
               title="Download JSON Backup of Club Records"
             >
               <Download className="h-3.5 w-3.5" />
-              Export Backup
+              Export
             </button>
             <button
               onClick={handleResetAllTo1400}
-              className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
               title="Reset all 40 club members to 0 games played and 1400 Elo"
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Reset All to 1400
+              Reset All
             </button>
           </div>
         </div>
@@ -448,6 +459,17 @@ export default function App() {
         onClose={() => setEditingPlayer(null)}
         onUpdatePlayer={handleUpdatePlayer}
         onDeletePlayer={handleDeletePlayer}
+      />
+
+      <VersionManagerModal
+        isOpen={isVersionManagerOpen}
+        onClose={() => setIsVersionManagerOpen(false)}
+        currentPlayers={players}
+        currentMatches={matches}
+        onRestoreState={(newPlayers, newMatches) => {
+          setPlayers(newPlayers);
+          setMatches(newMatches);
+        }}
       />
     </div>
   );
