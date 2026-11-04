@@ -5,6 +5,7 @@ import { Search, Trophy, ArrowUpRight, ArrowDownRight, Eye, PlusCircle, Filter, 
 
 interface ClubStandingsTableProps {
   players: ClubPlayer[];
+  isAdmin?: boolean;
   onSelectPlayer: (player: ClubPlayer) => void;
   onRecordMatchForPlayer: (player: ClubPlayer) => void;
   onEditPlayer: (player: ClubPlayer) => void;
@@ -13,6 +14,7 @@ interface ClubStandingsTableProps {
 
 export const ClubStandingsTable: React.FC<ClubStandingsTableProps> = ({
   players,
+  isAdmin = false,
   onSelectPlayer,
   onRecordMatchForPlayer,
   onEditPlayer,
@@ -111,7 +113,7 @@ export const ClubStandingsTable: React.FC<ClubStandingsTableProps> = ({
                 <th className="py-3 px-4 text-center">Record (W-D-L)</th>
                 <th className="py-3 px-3 text-right">Win %</th>
                 <th className="py-3 px-3 text-center">Attendance</th>
-                <th className="py-3 pr-4 pl-2 text-right">Action</th>
+                <th className="py-3 pr-4 pl-2 text-right">{isAdmin ? 'Action' : 'Progression'}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium text-xs">
@@ -219,31 +221,35 @@ export const ClubStandingsTable: React.FC<ClubStandingsTableProps> = ({
                         <button
                           onClick={() => onSelectPlayer(player)}
                           className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
-                          title="View Rating Progression Graph"
+                          title="View Rating Progression Graph & History"
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          onClick={() => onRecordMatchForPlayer(player)}
-                          className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-amber-400 hover:bg-amber-500 hover:text-slate-950 transition-colors"
-                          title="Record Match for This Player"
-                        >
-                          <PlusCircle className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => onEditPlayer(player)}
-                          className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-300 hover:text-amber-400 hover:bg-slate-700 transition-colors"
-                          title="Edit Member Information"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setPlayerToDelete(player)}
-                          className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
-                          title="Delete Member"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {isAdmin && (
+                          <>
+                            <button
+                              onClick={() => onRecordMatchForPlayer(player)}
+                              className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-amber-400 hover:bg-amber-500 hover:text-slate-950 transition-colors"
+                              title="Record Match for This Player (Admin)"
+                            >
+                              <PlusCircle className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => onEditPlayer(player)}
+                              className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-300 hover:text-amber-400 hover:bg-slate-700 transition-colors"
+                              title="Edit Member Information (Admin)"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setPlayerToDelete(player)}
+                              className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
+                              title="Delete Member (Admin)"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

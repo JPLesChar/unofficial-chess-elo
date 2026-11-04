@@ -1,0 +1,100 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidNumber(val, minVal, maxVal) {
+      return val is number && val >= minVal && val <= maxVal;
+    }
+
+    function isValidClub(data, id) {
+      return data.keys().hasAll(['id', 'name', 'adminPasscode', 'createdAt']) &&
+        data.id == id &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.adminPasscode, 3, 100);
+    }
+
+    function isValidPlayer(data, id) {
+      return data.keys().hasAll(['id', 'name', 'currentRating', 'initialRating', 'peakRating', 'category', 'gamesPlayed', 'wins', 'draws', 'losses']) &&
+        data.id == id &&
+        (!('clubId' in data) || isValidString(data.clubId, 1, 128)) &&
+        isValidString(data.name, 1, 100) &&
+        isValidNumber(data.currentRating, 100, 3500) &&
+        isValidNumber(data.initialRating, 100, 3500) &&
+        isValidNumber(data.peakRating, 100, 3500) &&
+        data.category in ['Open', 'Junior', 'Veteran', 'Women'] &&
+        isValidNumber(data.gamesPlayed, 0, 50000) &&
+        isValidNumber(data.wins, 0, 50000) &&
+        isValidNumber(data.draws, 0, 50000) &&
+        isValidNumber(data.losses, 0, 50000);
+    }
+
+    function isValidMatch(data, id) {
+      return data.keys().hasAll(['id', 'date', 'whitePlayerId', 'whitePlayerName', 'blackPlayerId', 'blackPlayerName', 'result', 'timeControl']) &&
+        data.id == id &&
+        (!('clubId' in data) || isValidString(data.clubId, 1, 128)) &&
+        isValidString(data.date, 1, 40) &&
+        isValidString(data.whitePlayerId, 1, 128) &&
+        isValidString(data.whitePlayerName, 1, 100) &&
+        isValidString(data.blackPlayerId, 1, 128) &&
+        isValidString(data.blackPlayerName, 1, 100) &&
+        data.result in ['1-0', '0-1', '1/2-1/2'] &&
+        data.timeControl in ['Classical', 'Rapid', 'Blitz'] &&
+        (!('whiteDelta' in data) || isValidNumber(data.whiteDelta, -200, 200)) &&
+        (!('blackDelta' in data) || isValidNumber(data.blackDelta, -200, 200));
+    }
+
+    function isValidSnapshot(data, id) {
+      return data.keys().hasAll(['id', 'name', 'createdAt', 'playersCount', 'matchesCount']) &&
+        data.id == id &&
+        (!('clubId' in data) || isValidString(data.clubId, 1, 128)) &&
+        isValidString(data.name, 1, 120) &&
+        isValidNumber(data.playersCount, 0, 20000) &&
+        isValidNumber(data.matchesCount, 0, 200000);
+    }
+
+    // Clubs Collection: Public read for club directory, validated writes
+    match /clubs/{clubId} {
+      allow read: if true;
+      allow create, update: if isValidId(clubId) && isValidClub(incoming(), clubId);
+      allow delete: if true;
+    }
+
+    // Players Collection: Public read for club members, validated writes
+    match /players/{playerId} {
+      allow read: if true;
+      allow create, update: if isValidId(playerId) && isValidPlayer(incoming(), playerId);
+      allow delete: if true;
+    }
+
+    // Matches Collection: Public read for match ledger, validated writes
+    match /matches/{matchId} {
+      allow read: if true;
+      allow create, update: if isValidId(matchId) && isValidMatch(incoming(), matchId);
+      allow delete: if true;
+    }
+
+    // Version Snapshots Collection: Public read for snapshots history, validated writes
+    match /snapshots/{snapshotId} {
+      allow read: if true;
+      allow create, update: if isValidId(snapshotId) && isValidSnapshot(incoming(), snapshotId);
+      allow delete: if true;
+    }
+  }
+}

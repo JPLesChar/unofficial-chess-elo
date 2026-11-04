@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { ClubMatch, ClubPlayer } from '../types/club';
 import { INITIAL_CLUB_PLAYERS } from '../data/initialClubRoster';
-import { X, Upload, Bookmark, RotateCcw, Clock, Trash2, Check, Download, ShieldCheck } from 'lucide-react';
+import { X, Upload, Bookmark, RotateCcw, Clock, Trash2, Check, Download, ShieldCheck, Cloud } from 'lucide-react';
+import { saveSnapshotToFirestore, getSnapshotsFromFirestore, SnapshotDoc } from '../services/firestoreClubService';
 
 export interface ClubSnapshot {
   id: string;
@@ -18,6 +19,9 @@ interface VersionManagerModalProps {
   onClose: () => void;
   currentPlayers: ClubPlayer[];
   currentMatches: ClubMatch[];
+  isAdmin?: boolean;
+  clubId?: string;
+  clubName?: string;
   onRestoreState: (players: ClubPlayer[], matches: ClubMatch[]) => void;
 }
 
@@ -26,17 +30,43 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
   onClose,
   currentPlayers,
   currentMatches,
+  isAdmin = false,
+  clubId = 'geneva-chess-club',
+  clubName = 'Club',
   onRestoreState,
 }) => {
   const [snapshotName, setSnapshotName] = useState<string>('');
   const [snapshots, setSnapshots] = useState<ClubSnapshot[]>(() => {
     try {
-      const saved = localStorage.getItem('club_elo_snapshots');
+      const saved = localStorage.getItem(`club_elo_snapshots_${clubId}`) || localStorage.getItem('club_elo_snapshots');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
+
+  // Fetch Firestore snapshots when modal opens
+  React.useEffect(() => {
+    if (isOpen) {
+      getSnapshotsFromFirestore(clubId)
+        .then((remoteList) => {
+          if (remoteList && remoteList.length > 0) {
+            const mapped: ClubSnapshot[] = remoteList.map((s) => ({
+              id: s.id,
+              name: s.name,
+              date: s.createdAt,
+              playersCount: s.playersCount,
+              matchesCount: s.matchesCount,
+              players: s.players,
+              matches: s.matches,
+            }));
+            setSnapshots(mapped);
+            localStorage.setItem(`club_elo_snapshots_${clubId}`, JSON.stringify(mapped));
+          }
+        })
+        .catch((err) => console.log('Could not load Firestore snapshots:', err));
+    }
+  }, [isOpen, clubId]);
 
   const [masterVersion, setMasterVersion] = useState<ClubSnapshot | null>(() => {
     try {
@@ -116,9 +146,25 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
 
     const updated = [newSnapshot, ...snapshots];
     setSnapshots(updated);
-    localStorage.setItem('club_elo_snapshots', JSON.stringify(updated));
+    localStorage.setItem(`club_elo_snapshots_${clubId}`, JSON.stringify(updated));
     setSnapshotName('');
-    showFeedback(`Saved snapshot: "${name}"`);
+
+    // Persist to Cloud Firestore
+    saveSnapshotToFirestore({
+      id: newSnapshot.id,
+      clubId,
+      name: newSnapshot.name,
+      createdAt: newSnapshot.date,
+      playersCount: newSnapshot.playersCount,
+      matchesCount: newSnapshot.matchesCount,
+      players: newSnapshot.players,
+      matches: newSnapshot.matches,
+    }, clubId)
+      .then(() => showFeedback(`Saved to Cloud & Snapshot: "${name}"`))
+      .catch((err) => {
+        console.error('Firestore snapshot save err:', err);
+        showFeedback(`Saved snapshot locally: "${name}"`);
+      });
   };
 
   // Restore a snapshot
@@ -179,6 +225,16 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
           </p>
         </div>
 
+        {/* Admin or View-Only Banner */}
+        {!isAdmin && (
+          <div className="mb-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3 text-xs text-indigo-300 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold">🔒 View-Only Mode</span>
+              <span>· Snapshot creation, restoring, and file imports require Admin Passcode.</span>
+            </div>
+          </div>
+        )}
+
         {errorFeedback && (
           <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-950/50 p-3 text-xs font-semibold text-rose-300 flex items-center gap-2">
             <X className="h-4 w-4" />
@@ -214,51 +270,59 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
                 : 'Save your clean roster (e.g. 40 players at 1400 Elo with 0 games) as the permanent Master Baseline.'}
             </p>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleSaveMaster}
-                className="flex items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-300 hover:bg-amber-500/30 transition-colors"
-              >
-                <Bookmark className="h-3.5 w-3.5" />
-                {masterVersion ? 'Update Master Version' : 'Set Current State as Master'}
-              </button>
-
-              {masterVersion && (
+            {isAdmin ? (
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={handleRestoreMaster}
-                  className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors"
+                  onClick={handleSaveMaster}
+                  className="flex items-center gap-1.5 rounded-lg border border-amber-500/50 bg-amber-500/20 px-3 py-2 text-xs font-bold text-amber-300 hover:bg-amber-500/30 transition-colors"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  Restore to Master Version
+                  <Bookmark className="h-3.5 w-3.5" />
+                  {masterVersion ? 'Update Master Version' : 'Set Current State as Master'}
                 </button>
-              )}
-            </div>
+
+                {masterVersion && (
+                  <button
+                    type="button"
+                    onClick={handleRestoreMaster}
+                    className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Restore to Master Version
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="text-[11px] text-amber-300/80 italic flex items-center gap-1.5">
+                <span>🔒 Protected baseline (Admin passcode required to restore or update)</span>
+              </div>
+            )}
           </div>
 
-          {/* Create Named Snapshot */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-              Save Current Progress Snapshot
-            </h3>
-            <form onSubmit={handleCreateSnapshot} className="flex gap-2">
-              <input
-                type="text"
-                value={snapshotName}
-                onChange={(e) => setSnapshotName(e.target.value)}
-                placeholder="e.g. Week 1 Results, Autumn Round 3"
-                className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none"
-              />
-              <button
-                type="submit"
-                className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition-colors whitespace-nowrap"
-              >
-                <Clock className="h-3.5 w-3.5" />
-                Save Snapshot
-              </button>
-            </form>
-          </div>
+          {/* Create Named Snapshot (Admin Only) */}
+          {isAdmin && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+                Save Current Progress Snapshot
+              </h3>
+              <form onSubmit={handleCreateSnapshot} className="flex gap-2">
+                <input
+                  type="text"
+                  value={snapshotName}
+                  onChange={(e) => setSnapshotName(e.target.value)}
+                  placeholder="e.g. Week 1 Results, Autumn Round 3"
+                  className="flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white focus:border-amber-400 focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition-colors whitespace-nowrap"
+                >
+                  <Clock className="h-3.5 w-3.5" />
+                  Save Snapshot
+                </button>
+              </form>
+            </div>
+          )}
 
           {/* List of Saved Snapshots */}
           <div>
@@ -279,21 +343,27 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleRestoreSnapshot(snap)}
-                        className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-                      >
-                        Restore
-                      </button>
-                      <button
-                        onClick={() => handleDeleteSnapshot(snap.id)}
-                        className="rounded-lg p-1 text-slate-500 hover:text-rose-400 transition-colors"
-                        title="Delete Snapshot"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    {isAdmin ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleRestoreSnapshot(snap)}
+                          className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+                        >
+                          Restore
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSnapshot(snap.id)}
+                          className="rounded-lg p-1 text-slate-500 hover:text-rose-400 transition-colors"
+                          title="Delete Snapshot"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-slate-500 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        Archived
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -304,33 +374,39 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
             )}
           </div>
 
-          {/* Import Backup File From Computer */}
-          <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-semibold text-slate-300 block">
-                Import Saved JSON Backup File
-              </span>
-              <span className="text-[11px] text-slate-500">
-                Restore a backup file exported previously from your computer
-              </span>
-            </div>
+          {/* Import Backup File From Computer (Admin Only) */}
+          {isAdmin ? (
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-slate-300 block">
+                  Import Saved JSON Backup File
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Restore a backup file exported previously from your computer
+                </span>
+              </div>
 
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept=".json"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition-colors whitespace-nowrap"
-            >
-              <Upload className="h-3.5 w-3.5" />
-              Upload Backup File
-            </button>
-          </div>
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept=".json"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 hover:text-white transition-colors whitespace-nowrap"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Upload Backup File
+              </button>
+            </div>
+          ) : (
+            <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-500 italic text-center">
+              File restoration and imports are reserved for club administrators.
+            </div>
+          )}
         </div>
       </div>
     </div>

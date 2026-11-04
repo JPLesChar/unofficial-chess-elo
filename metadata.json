@@ -1,6 +1,6 @@
 {
-  "name": "ClubElo Manager - Local Chess Club Rating & Attendance Tracker",
-  "description": "Manage attendance, manually record over-the-board game results, and track Elo rating progression across 40+ local chess club members.",
+  "name": "ClubElo Manager - Multi-Club Chess Rating & Attendance Platform",
+  "description": "Host multiple chess clubs independently. Manage attendance, record over-the-board game results, and track Elo rating leaderboards with club-specific admin access.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

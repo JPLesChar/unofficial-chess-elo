@@ -1,7 +1,19 @@
 export type ClubCategory = 'Open' | 'Junior' | 'Veteran' | 'Women';
 
+export interface ChessClub {
+  id: string;
+  name: string;
+  city?: string;
+  description?: string;
+  adminPasscode: string;
+  createdAt: string;
+  playerCount?: number;
+  matchCount?: number;
+}
+
 export interface ClubPlayer {
   id: string;
+  clubId?: string;
   name: string;
   currentRating: number;
   initialRating: number;
@@ -23,6 +35,7 @@ export type MatchResult = '1-0' | '0-1' | '1/2-1/2';
 
 export interface ClubMatch {
   id: string;
+  clubId?: string;
   date: string;
   boardNumber?: number;
   whitePlayerId: string;

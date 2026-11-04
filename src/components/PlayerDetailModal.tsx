@@ -8,6 +8,7 @@ interface PlayerDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
   matches: ClubMatch[];
+  isAdmin?: boolean;
   onRecordMatchForPlayer: (player: ClubPlayer) => void;
   onEditPlayer: (player: ClubPlayer) => void;
   onEditMatch?: (match: ClubMatch) => void;
@@ -18,6 +19,7 @@ export const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({
   isOpen,
   onClose,
   matches,
+  isAdmin = false,
   onRecordMatchForPlayer,
   onEditPlayer,
   onEditMatch,
@@ -141,28 +143,30 @@ export const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                onClose();
-                onEditPlayer(player);
-              }}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-            >
-              <Edit3 className="h-3.5 w-3.5 text-amber-400" />
-              Edit Member
-            </button>
-            <button
-              onClick={() => {
-                onClose();
-                onRecordMatchForPlayer(player);
-              }}
-              className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Record Game
-            </button>
-          </div>
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  onClose();
+                  onEditPlayer(player);
+                }}
+                className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+              >
+                <Edit3 className="h-3.5 w-3.5 text-amber-400" />
+                Edit Member
+              </button>
+              <button
+                onClick={() => {
+                  onClose();
+                  onRecordMatchForPlayer(player);
+                }}
+                className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors"
+              >
+                <PlusCircle className="h-4 w-4" />
+                Record Game
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Rating Metrics Strip */}
@@ -368,14 +372,14 @@ export const PlayerDetailModal: React.FC<PlayerDetailModalProps> = ({
                           {delta > 0 ? `+${delta}` : delta}
                         </span>
                       </div>
-                      {onEditMatch && (
+                      {isAdmin && onEditMatch && (
                         <button
                           onClick={() => {
                             onClose();
                             onEditMatch(m);
                           }}
                           className="rounded-lg p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
-                          title="Edit Game Result"
+                          title="Edit Game Result (Admin)"
                         >
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>

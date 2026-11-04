@@ -4,12 +4,14 @@ import { Search, Calendar, Trash2, ArrowRight, Edit3, X, AlertTriangle } from 'l
 
 interface MatchHistoryLedgerProps {
   matches: ClubMatch[];
+  isAdmin?: boolean;
   onDeleteMatch: (matchId: string) => void;
   onEditMatch: (match: ClubMatch) => void;
 }
 
 export const MatchHistoryLedger: React.FC<MatchHistoryLedgerProps> = ({
   matches,
+  isAdmin = false,
   onDeleteMatch,
   onEditMatch,
 }) => {
@@ -81,15 +83,15 @@ export const MatchHistoryLedger: React.FC<MatchHistoryLedgerProps> = ({
                 <th className="py-3 px-3 text-center w-24">Result</th>
                 <th className="py-3 px-4">Black Player</th>
                 <th className="py-3 px-3">Format / Notes</th>
-                <th className="py-3 pr-4 pl-2 text-right w-16">Action</th>
+                {isAdmin && <th className="py-3 pr-4 pl-2 text-right w-16">Action</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium text-xs">
               {filteredMatches.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-500 italic">
+                  <td colSpan={isAdmin ? 6 : 5} className="py-8 text-center text-slate-500 italic">
                     {matches.length === 0
-                      ? 'No games recorded yet. Click "Record Game Result" above to add your first match!'
+                      ? (isAdmin ? 'No games recorded yet. Click "Record Game Result" above to add your first match!' : 'No games recorded yet in the club ledger.')
                       : 'No matches found matching your search filter.'}
                   </td>
                 </tr>
@@ -171,24 +173,26 @@ export const MatchHistoryLedger: React.FC<MatchHistoryLedgerProps> = ({
                     </td>
 
                     {/* Action */}
-                    <td className="py-3 pr-4 pl-2 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => onEditMatch(m)}
-                          className="rounded-lg p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
-                          title="Edit Game Result"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setMatchToDelete(m)}
-                          className="rounded-lg p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
-                          title="Delete / Undo Game Result"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
+                    {isAdmin && (
+                      <td className="py-3 pr-4 pl-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => onEditMatch(m)}
+                            className="rounded-lg p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+                            title="Edit Game Result (Admin)"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setMatchToDelete(m)}
+                            className="rounded-lg p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                            title="Delete / Undo Game Result (Admin)"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
