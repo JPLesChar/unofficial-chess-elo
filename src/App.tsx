@@ -463,7 +463,7 @@ export default function App() {
                 </span>
               </div>
               <span className="text-[11px] text-slate-400 block -mt-0.5">
-                Official Rating &amp; Standings System
+                Unofficial Rating &amp; Standings System
               </span>
             </div>
           </div>
