@@ -9,18 +9,14 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { db, ensureAuthenticated, handleFirestoreError } from '../lib/firebase';
-import { ClubMatch, ClubPlayer, ChessClub } from '../types/club';
-import { INITIAL_CLUB_PLAYERS } from '../data/initialClubRoster';
-import { DEFAULT_CLUBS, ZURICH_INITIAL_PLAYERS } from '../data/initialClubs';
+import { ClubMatch, ClubPlayer } from '../types/club';
 
-const CLUBS_COLLECTION = 'clubs';
 const PLAYERS_COLLECTION = 'players';
 const MATCHES_COLLECTION = 'matches';
 const SNAPSHOTS_COLLECTION = 'snapshots';
 
 export interface SnapshotDoc {
   id: string;
-  clubId?: string;
   name: string;
   description?: string;
   createdAt: string;
@@ -31,192 +27,20 @@ export interface SnapshotDoc {
 }
 
 /**
- * Initializes Firestore data:
- * 1. Checks and seeds default clubs (Geneva Chess Club, Zurich Knights)
- * 2. Seeds Geneva players and Zurich players if not present
- * 3. Migrates any legacy players/matches without clubId to 'geneva-chess-club'
+ * Initializes Firestore connection.
  */
-export async function initializeFirestoreIfNeeded(cachedPlayers?: ClubPlayer[], cachedMatches?: ClubMatch[]) {
+export async function initializeFirestoreIfNeeded() {
   try {
     await ensureAuthenticated();
-
-    // 1. Check Clubs collection
-    const clubsCol = collection(db, CLUBS_COLLECTION);
-    const existingClubsSnap = await getDocs(clubsCol);
-
-    if (existingClubsSnap.empty) {
-      console.log('[Firestore] Seeding default clubs directory...');
-      const clubBatch = writeBatch(db);
-      for (const club of DEFAULT_CLUBS) {
-        const clubRef = doc(db, CLUBS_COLLECTION, club.id);
-        clubBatch.set(clubRef, club);
-      }
-      await clubBatch.commit();
-      console.log(`[Firestore] Seeded ${DEFAULT_CLUBS.length} initial chess clubs.`);
-    }
-
-    // 2. Check Players collection
-    const playersCol = collection(db, PLAYERS_COLLECTION);
-    const existingPlayersSnap = await getDocs(playersCol);
-
-    if (existingPlayersSnap.empty) {
-      const sourcePlayers = (cachedPlayers && cachedPlayers.length > 0)
-        ? cachedPlayers
-        : INITIAL_CLUB_PLAYERS;
-
-      const batch = writeBatch(db);
-
-      // Seed Geneva players
-      for (const player of sourcePlayers) {
-        const playerRef = doc(db, PLAYERS_COLLECTION, player.id);
-        batch.set(playerRef, {
-          id: player.id,
-          clubId: 'geneva-chess-club',
-          name: player.name,
-          currentRating: player.currentRating ?? 1400,
-          initialRating: player.initialRating ?? 1400,
-          peakRating: player.peakRating ?? 1400,
-          category: player.category || 'Open',
-          gamesPlayed: player.gamesPlayed ?? 0,
-          wins: player.wins ?? 0,
-          draws: player.draws ?? 0,
-          losses: player.losses ?? 0,
-          whiteWins: player.whiteWins ?? 0,
-          blackWins: player.blackWins ?? 0,
-          joinDate: player.joinDate || '2026-01-10',
-          lastActiveDate: player.lastActiveDate || '2026-11-04',
-          attendanceCount: player.attendanceCount ?? 0,
-          notes: player.notes || '',
-        });
-      }
-
-      // Seed Zurich players
-      for (const zkPlayer of ZURICH_INITIAL_PLAYERS) {
-        const zkRef = doc(db, PLAYERS_COLLECTION, zkPlayer.id);
-        batch.set(zkRef, zkPlayer);
-      }
-
-      // Seed matches if provided
-      if (cachedMatches && cachedMatches.length > 0) {
-        for (const match of cachedMatches) {
-          const matchRef = doc(db, MATCHES_COLLECTION, match.id);
-          batch.set(matchRef, {
-            ...match,
-            clubId: match.clubId || 'geneva-chess-club',
-          });
-        }
-      }
-
-      await batch.commit();
-      console.log(`[Firestore] Successfully seeded players for Geneva and Zurich clubs.`);
-    } else {
-      // Migrate legacy players/matches without clubId to 'geneva-chess-club'
-      const unassignedPlayers: ClubPlayer[] = [];
-      existingPlayersSnap.forEach((d) => {
-        const data = d.data() as ClubPlayer;
-        if (!data.clubId) {
-          unassignedPlayers.push(data);
-        }
-      });
-
-      if (unassignedPlayers.length > 0) {
-        const migrationBatch = writeBatch(db);
-        for (const p of unassignedPlayers) {
-          const pRef = doc(db, PLAYERS_COLLECTION, p.id);
-          migrationBatch.set(pRef, { clubId: 'geneva-chess-club' }, { merge: true });
-        }
-        await migrationBatch.commit();
-      }
-    }
   } catch (err) {
-    handleFirestoreError(err, { operation: 'create', targetCollection: CLUBS_COLLECTION });
+    handleFirestoreError(err, { operation: 'list', targetCollection: PLAYERS_COLLECTION });
   }
 }
 
 /**
- * Subscribe to real-time changes in Clubs collection
- */
-export function subscribeToClubs(
-  onUpdate: (clubs: ChessClub[]) => void,
-  onError?: (err: unknown) => void
-): Unsubscribe {
-  const clubsCol = collection(db, CLUBS_COLLECTION);
-  return onSnapshot(
-    clubsCol,
-    (snapshot) => {
-      const list: ChessClub[] = [];
-      snapshot.forEach((docSnap) => {
-        list.push(docSnap.data() as ChessClub);
-      });
-      // Sort alphabetically by name
-      list.sort((a, b) => a.name.localeCompare(b.name));
-      onUpdate(list.length > 0 ? list : DEFAULT_CLUBS);
-    },
-    (err) => {
-      handleFirestoreError(err, { operation: 'list', targetCollection: CLUBS_COLLECTION });
-      if (onError) onError(err);
-    }
-  );
-}
-
-/**
- * Create a new chess club
- */
-export async function createClubInFirestore(club: ChessClub): Promise<void> {
-  await ensureAuthenticated();
-  const clubRef = doc(db, CLUBS_COLLECTION, club.id);
-  await setDoc(clubRef, club);
-}
-
-/**
- * Update an existing chess club
- */
-export async function updateClubInFirestore(club: ChessClub): Promise<void> {
-  await ensureAuthenticated();
-  const clubRef = doc(db, CLUBS_COLLECTION, club.id);
-  await setDoc(clubRef, club, { merge: true });
-}
-
-/**
- * Delete a chess club and its associated players & matches
- */
-export async function deleteClubFromFirestore(clubId: string): Promise<void> {
-  await ensureAuthenticated();
-
-  // 1. Delete all matches for this club
-  const matchesCol = collection(db, MATCHES_COLLECTION);
-  const matchDocs = await getDocs(matchesCol);
-  const matchBatch = writeBatch(db);
-  matchDocs.forEach((d) => {
-    const data = d.data() as ClubMatch;
-    if (data.clubId === clubId) {
-      matchBatch.delete(d.ref);
-    }
-  });
-  await matchBatch.commit();
-
-  // 2. Delete all players for this club
-  const playersCol = collection(db, PLAYERS_COLLECTION);
-  const playerDocs = await getDocs(playersCol);
-  const playerBatch = writeBatch(db);
-  playerDocs.forEach((d) => {
-    const data = d.data() as ClubPlayer;
-    if (data.clubId === clubId) {
-      playerBatch.delete(d.ref);
-    }
-  });
-  await playerBatch.commit();
-
-  // 3. Delete club document
-  const clubRef = doc(db, CLUBS_COLLECTION, clubId);
-  await deleteDoc(clubRef);
-}
-
-/**
- * Subscribe to real-time changes in Players collection filtered by Club ID
+ * Subscribe to real-time changes in Players collection
  */
 export function subscribeToPlayers(
-  clubId: string,
   onUpdate: (players: ClubPlayer[]) => void,
   onError?: (err: unknown) => void
 ): Unsubscribe {
@@ -226,11 +50,7 @@ export function subscribeToPlayers(
     (snapshot) => {
       const list: ClubPlayer[] = [];
       snapshot.forEach((docSnap) => {
-        const p = docSnap.data() as ClubPlayer;
-        // Filter by active club ID (legacy documents without clubId default to geneva-chess-club)
-        if (p.clubId === clubId || (!p.clubId && clubId === 'geneva-chess-club')) {
-          list.push({ ...p, clubId });
-        }
+        list.push(docSnap.data() as ClubPlayer);
       });
       // Sort descending by current rating
       list.sort((a, b) => b.currentRating - a.currentRating || a.name.localeCompare(b.name));
@@ -244,10 +64,9 @@ export function subscribeToPlayers(
 }
 
 /**
- * Subscribe to real-time changes in Matches collection filtered by Club ID
+ * Subscribe to real-time changes in Matches collection
  */
 export function subscribeToMatches(
-  clubId: string,
   onUpdate: (matches: ClubMatch[]) => void,
   onError?: (err: unknown) => void
 ): Unsubscribe {
@@ -257,11 +76,7 @@ export function subscribeToMatches(
     (snapshot) => {
       const list: ClubMatch[] = [];
       snapshot.forEach((docSnap) => {
-        const m = docSnap.data() as ClubMatch;
-        // Filter by active club ID (legacy matches without clubId default to geneva-chess-club)
-        if (m.clubId === clubId || (!m.clubId && clubId === 'geneva-chess-club')) {
-          list.push({ ...m, clubId });
-        }
+        list.push(docSnap.data() as ClubMatch);
       });
       // Sort descending by date/id
       list.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
@@ -275,14 +90,13 @@ export function subscribeToMatches(
 }
 
 /**
- * Add or update a single player scoped to a club
+ * Add or update a single player
  */
-export async function savePlayerToFirestore(player: ClubPlayer, clubId: string): Promise<void> {
+export async function savePlayerToFirestore(player: ClubPlayer): Promise<void> {
   await ensureAuthenticated();
   const playerRef = doc(db, PLAYERS_COLLECTION, player.id);
-  const data = {
+  const data: ClubPlayer = {
     id: player.id,
-    clubId,
     name: player.name,
     currentRating: player.currentRating,
     initialRating: player.initialRating,
@@ -317,15 +131,14 @@ export async function deletePlayerFromFirestore(playerId: string): Promise<void>
 export async function saveMatchToFirestore(
   match: ClubMatch,
   whitePlayer: ClubPlayer,
-  blackPlayer: ClubPlayer,
-  clubId: string
+  blackPlayer: ClubPlayer
 ): Promise<void> {
   await ensureAuthenticated();
   const batch = writeBatch(db);
 
-  // 1. Save match document with clubId
+  // 1. Save match document
   const matchRef = doc(db, MATCHES_COLLECTION, match.id);
-  batch.set(matchRef, { ...match, clubId });
+  batch.set(matchRef, match);
 
   // 2. Update White player
   const isWhiteWin = match.result === '1-0';
@@ -334,7 +147,6 @@ export async function saveMatchToFirestore(
 
   const updatedWhite: ClubPlayer = {
     ...whitePlayer,
-    clubId,
     currentRating: match.whiteRatingAfter,
     peakRating: Math.max(whitePlayer.peakRating, match.whiteRatingAfter),
     gamesPlayed: whitePlayer.gamesPlayed + 1,
@@ -354,7 +166,6 @@ export async function saveMatchToFirestore(
 
   const updatedBlack: ClubPlayer = {
     ...blackPlayer,
-    clubId,
     currentRating: match.blackRatingAfter,
     peakRating: Math.max(blackPlayer.peakRating, match.blackRatingAfter),
     gamesPlayed: blackPlayer.gamesPlayed + 1,
@@ -434,15 +245,14 @@ export async function updateMatchInFirestore(
   originalMatch: ClubMatch,
   updatedMatch: ClubMatch,
   whitePlayer?: ClubPlayer,
-  blackPlayer?: ClubPlayer,
-  clubId?: string
+  blackPlayer?: ClubPlayer
 ): Promise<void> {
   await ensureAuthenticated();
   const batch = writeBatch(db);
 
   // 1. Update match document
   const matchRef = doc(db, MATCHES_COLLECTION, updatedMatch.id);
-  batch.set(matchRef, { ...updatedMatch, clubId: clubId || updatedMatch.clubId || originalMatch.clubId || 'geneva-chess-club' }, { merge: true });
+  batch.set(matchRef, updatedMatch, { merge: true });
 
   // 2. Adjust White player
   if (whitePlayer) {
@@ -506,24 +316,21 @@ export async function updateMatchInFirestore(
 }
 
 /**
- * Reset all players to 1400 starting Elo and 0 games played for a specific club, and clear that club's match records
+ * Reset all players to 1400 starting Elo and 0 games played, and clear match records
  */
-export async function resetAllClubRatingsInFirestore(clubId: string, currentPlayers: ClubPlayer[]): Promise<void> {
+export async function resetAllClubRatingsInFirestore(currentPlayers: ClubPlayer[]): Promise<void> {
   await ensureAuthenticated();
 
-  // 1. Delete only matches belonging to this club
+  // 1. Delete all matches
   const matchesCol = collection(db, MATCHES_COLLECTION);
   const matchDocs = await getDocs(matchesCol);
   const matchBatch = writeBatch(db);
   matchDocs.forEach((d) => {
-    const matchData = d.data() as ClubMatch;
-    if (matchData.clubId === clubId || (!matchData.clubId && clubId === 'geneva-chess-club')) {
-      matchBatch.delete(d.ref);
-    }
+    matchBatch.delete(d.ref);
   });
   await matchBatch.commit();
 
-  // 2. Reset each player in this club to 1400 / 0
+  // 2. Reset each player to 1400 / 0
   const playerBatch = writeBatch(db);
   for (const p of currentPlayers) {
     const pRef = doc(db, PLAYERS_COLLECTION, p.id);
@@ -531,7 +338,6 @@ export async function resetAllClubRatingsInFirestore(clubId: string, currentPlay
       pRef,
       {
         ...p,
-        clubId,
         currentRating: 1400,
         initialRating: 1400,
         peakRating: 1400,
@@ -542,7 +348,7 @@ export async function resetAllClubRatingsInFirestore(clubId: string, currentPlay
         whiteWins: 0,
         blackWins: 0,
         attendanceCount: 0,
-        lastActiveDate: '2026-11-04',
+        lastActiveDate: new Date().toISOString().split('T')[0],
       },
       { merge: true }
     );
@@ -551,63 +357,57 @@ export async function resetAllClubRatingsInFirestore(clubId: string, currentPlay
 }
 
 /**
- * Save a club snapshot to Firestore
+ * Save a snapshot to Firestore
  */
-export async function saveSnapshotToFirestore(snapshot: SnapshotDoc, clubId?: string): Promise<void> {
+export async function saveSnapshotToFirestore(snapshot: SnapshotDoc): Promise<void> {
   await ensureAuthenticated();
   const snapRef = doc(db, SNAPSHOTS_COLLECTION, snapshot.id);
-  await setDoc(snapRef, { ...snapshot, clubId: clubId || snapshot.clubId || 'geneva-chess-club' });
+  await setDoc(snapRef, snapshot);
 }
 
 /**
- * Fetch all snapshots from Firestore filtered by clubId
+ * Fetch all snapshots from Firestore
  */
-export async function getSnapshotsFromFirestore(clubId?: string): Promise<SnapshotDoc[]> {
+export async function getSnapshotsFromFirestore(): Promise<SnapshotDoc[]> {
   await ensureAuthenticated();
   const snapCol = collection(db, SNAPSHOTS_COLLECTION);
   const snapshot = await getDocs(snapCol);
   const list: SnapshotDoc[] = [];
   snapshot.forEach((d) => {
-    const data = d.data() as SnapshotDoc;
-    if (!clubId || data.clubId === clubId || (!data.clubId && clubId === 'geneva-chess-club')) {
-      list.push(data);
-    }
+    list.push(d.data() as SnapshotDoc);
   });
   list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return list;
 }
 
 /**
- * Restore a snapshot to Firestore (overwrites roster & matches for this club)
+ * Restore a snapshot to Firestore (overwrites roster & matches)
  */
-export async function restoreSnapshotToFirestore(snapshot: SnapshotDoc, clubId: string): Promise<void> {
+export async function restoreSnapshotToFirestore(snapshot: SnapshotDoc): Promise<void> {
   await ensureAuthenticated();
 
-  // Clear existing matches for this club
+  // 1. Clear existing matches
   const matchesCol = collection(db, MATCHES_COLLECTION);
   const existingMatches = await getDocs(matchesCol);
   const deleteBatch = writeBatch(db);
   existingMatches.forEach((d) => {
-    const m = d.data() as ClubMatch;
-    if (m.clubId === clubId || (!m.clubId && clubId === 'geneva-chess-club')) {
-      deleteBatch.delete(d.ref);
-    }
+    deleteBatch.delete(d.ref);
   });
   await deleteBatch.commit();
 
-  // Write snapshot matches with clubId
+  // 2. Write snapshot matches
   if (snapshot.matches.length > 0) {
     const matchBatch = writeBatch(db);
     for (const m of snapshot.matches) {
-      matchBatch.set(doc(db, MATCHES_COLLECTION, m.id), { ...m, clubId });
+      matchBatch.set(doc(db, MATCHES_COLLECTION, m.id), m);
     }
     await matchBatch.commit();
   }
 
-  // Write snapshot players with clubId
+  // 3. Write snapshot players
   const playerBatch = writeBatch(db);
   for (const p of snapshot.players) {
-    playerBatch.set(doc(db, PLAYERS_COLLECTION, p.id), { ...p, clubId });
+    playerBatch.set(doc(db, PLAYERS_COLLECTION, p.id), p);
   }
   await playerBatch.commit();
 }

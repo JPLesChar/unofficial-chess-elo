@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClubMatch, ClubPlayer, ChessClub } from './types/club';
-import { INITIAL_CLUB_PLAYERS } from './data/initialClubRoster';
-import { DEFAULT_CLUBS } from './data/initialClubs';
+import { ClubMatch, ClubPlayer } from './types/club';
 import { ClubStandingsTable } from './components/ClubStandingsTable';
 import { MatchHistoryLedger } from './components/MatchHistoryLedger';
 import { ClubStatsOverview } from './components/ClubStatsOverview';
@@ -12,14 +10,10 @@ import { EditPlayerModal } from './components/EditPlayerModal';
 import { EditResultModal } from './components/EditResultModal';
 import { VersionManagerModal } from './components/VersionManagerModal';
 import { AdminLoginModal } from './components/AdminLoginModal';
-import { ClubSelector } from './components/ClubSelector';
-import { CreateClubModal } from './components/CreateClubModal';
-import { ClubDirectoryModal } from './components/ClubDirectoryModal';
 import {
   PlusCircle,
   UserPlus,
   Download,
-  RefreshCw,
   Trophy,
   Users,
   History,
@@ -33,12 +27,9 @@ import {
   Lock,
   Unlock,
   ShieldCheck,
-  Building2,
-  MapPin,
 } from 'lucide-react';
 import {
   initializeFirestoreIfNeeded,
-  subscribeToClubs,
   subscribeToPlayers,
   subscribeToMatches,
   saveMatchToFirestore,
@@ -56,25 +47,7 @@ export default function App() {
   const [firestoreStatus, setFirestoreStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
 
-  // Multi-club state
-  const [clubs, setClubs] = useState<ChessClub[]>(DEFAULT_CLUBS);
-  const [activeClubId, setActiveClubId] = useState<string>(() => {
-    try {
-      return localStorage.getItem('club_elo_active_club_id') || 'geneva-chess-club';
-    } catch {
-      return 'geneva-chess-club';
-    }
-  });
-
-  // Modals for multi-club
-  const [isCreateClubOpen, setIsCreateClubOpen] = useState<boolean>(false);
-  const [isClubDirectoryOpen, setIsClubDirectoryOpen] = useState<boolean>(false);
-
-  // Active club object
-  const currentClub: ChessClub =
-    clubs.find((c) => c.id === activeClubId) || clubs[0] || DEFAULT_CLUBS[0];
-
-  // Admin access state (persisted across tab refreshes in localStorage)
+  // Admin authentication state
   const [isAdmin, setIsAdmin] = useState<boolean>(() => {
     try {
       return localStorage.getItem('club_elo_is_admin_active') === 'true';
@@ -84,31 +57,27 @@ export default function App() {
   });
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
 
-  // Club roster state for active club
+  // Single club roster state
   const [players, setPlayers] = useState<ClubPlayer[]>(() => {
     try {
-      const saved = localStorage.getItem(`club_elo_players_${activeClubId}`);
+      const saved = localStorage.getItem('club_elo_players');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {
       // Fallback
     }
-    return INITIAL_CLUB_PLAYERS;
+    return [];
   });
 
-  // Club matches history state for active club
+  // Single club matches history state
   const [matches, setMatches] = useState<ClubMatch[]>(() => {
     try {
-      const saved = localStorage.getItem(`club_elo_matches_${activeClubId}`);
+      const saved = localStorage.getItem('club_elo_matches');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {
       // Fallback
@@ -135,43 +104,16 @@ export default function App() {
     }
   }, [players]);
 
-  // Synchronize active club data to localStorage as fast client-side cache
+  // Synchronize data to localStorage as fast client cache
   useEffect(() => {
-    localStorage.setItem(`club_elo_players_${activeClubId}`, JSON.stringify(players));
-  }, [players, activeClubId]);
+    localStorage.setItem('club_elo_players', JSON.stringify(players));
+  }, [players]);
 
   useEffect(() => {
-    localStorage.setItem(`club_elo_matches_${activeClubId}`, JSON.stringify(matches));
-  }, [matches, activeClubId]);
+    localStorage.setItem('club_elo_matches', JSON.stringify(matches));
+  }, [matches]);
 
-  // 1. Subscribe to Clubs Directory
-  useEffect(() => {
-    let unsubClubs: (() => void) | undefined;
-
-    ensureAuthenticated()
-      .then(async () => {
-        // Initialize Firestore with default clubs & rosters if needed
-        await initializeFirestoreIfNeeded();
-        setFirestoreStatus('connected');
-
-        unsubClubs = subscribeToClubs((liveClubs) => {
-          if (liveClubs && liveClubs.length > 0) {
-            setClubs(liveClubs);
-          }
-        });
-      })
-      .catch((err) => {
-        console.error('Failed to initialize clubs in Firebase:', err);
-        setFirestoreStatus('error');
-        setFirestoreError('Could not initialize Firebase.');
-      });
-
-    return () => {
-      if (unsubClubs) unsubClubs();
-    };
-  }, []);
-
-  // 2. Connect to Cloud Firestore and listen to real-time updates for the active club
+  // Connect to Cloud Firestore and listen to direct real-time updates for players and matches
   useEffect(() => {
     let unsubPlayers: (() => void) | undefined;
     let unsubMatches: (() => void) | undefined;
@@ -179,11 +121,11 @@ export default function App() {
     setFirestoreStatus('connecting');
 
     ensureAuthenticated()
-      .then(() => {
+      .then(async () => {
+        await initializeFirestoreIfNeeded();
         setFirestoreStatus('connected');
 
         unsubPlayers = subscribeToPlayers(
-          activeClubId,
           (livePlayers) => {
             setPlayers(livePlayers);
             setFirestoreStatus('connected');
@@ -196,7 +138,6 @@ export default function App() {
         );
 
         unsubMatches = subscribeToMatches(
-          activeClubId,
           (liveMatches) => {
             setMatches(liveMatches);
             setFirestoreStatus('connected');
@@ -218,26 +159,7 @@ export default function App() {
       if (unsubPlayers) unsubPlayers();
       if (unsubMatches) unsubMatches();
     };
-  }, [activeClubId]);
-
-  // Handle switching active chess club
-  const handleSelectClub = (club: ChessClub) => {
-    setActiveClubId(club.id);
-    localStorage.setItem('club_elo_active_club_id', club.id);
-    setSelectedPlayer(null);
-    setEditingPlayer(null);
-    setEditingMatch(null);
-  };
-
-  // Handle creating a new chess club
-  const handleClubCreated = (newClub: ChessClub) => {
-    setClubs((prev) => [newClub, ...prev.filter((c) => c.id !== newClub.id)]);
-    setActiveClubId(newClub.id);
-    localStorage.setItem('club_elo_active_club_id', newClub.id);
-    setSelectedPlayer(null);
-    setEditingPlayer(null);
-    setEditingMatch(null);
-  };
+  }, []);
 
   // Update an existing player's details
   const handleUpdatePlayer = (updated: ClubPlayer) => {
@@ -245,7 +167,7 @@ export default function App() {
     if (selectedPlayer && selectedPlayer.id === updated.id) {
       setSelectedPlayer(updated);
     }
-    savePlayerToFirestore(updated, activeClubId).catch((err) => {
+    savePlayerToFirestore(updated).catch((err) => {
       console.error('Failed to update player in Firestore:', err);
     });
   };
@@ -266,12 +188,8 @@ export default function App() {
     const whitePlayer = players.find((p) => p.id === match.whitePlayerId);
     const blackPlayer = players.find((p) => p.id === match.blackPlayerId);
 
-    const matchWithClub: ClubMatch = { ...match, clubId: activeClubId };
+    setMatches((prev) => [match, ...prev]);
 
-    // 1. Prepend match to ledger (optimistic)
-    setMatches((prev) => [matchWithClub, ...prev]);
-
-    // 2. Update White & Black players in roster (optimistic)
     setPlayers((prev) =>
       prev.map((p) => {
         if (p.id === match.whitePlayerId) {
@@ -282,7 +200,6 @@ export default function App() {
 
           return {
             ...p,
-            clubId: activeClubId,
             currentRating: newRating,
             peakRating: Math.max(p.peakRating, newRating),
             gamesPlayed: p.gamesPlayed + 1,
@@ -303,7 +220,6 @@ export default function App() {
 
           return {
             ...p,
-            clubId: activeClubId,
             currentRating: newRating,
             peakRating: Math.max(p.peakRating, newRating),
             gamesPlayed: p.gamesPlayed + 1,
@@ -320,15 +236,14 @@ export default function App() {
       })
     );
 
-    // 3. Persist permanently to Cloud Firestore
     if (whitePlayer && blackPlayer) {
-      saveMatchToFirestore(matchWithClub, whitePlayer, blackPlayer, activeClubId).catch((err) => {
+      saveMatchToFirestore(match, whitePlayer, blackPlayer).catch((err) => {
         console.error('Failed to save match to Firestore:', err);
       });
     }
   };
 
-  // Handle deleting a mistakenly entered match
+  // Handle deleting a match
   const handleDeleteMatch = (matchId: string) => {
     const targetMatch = matches.find((m) => m.id === matchId);
     if (!targetMatch) return;
@@ -336,10 +251,8 @@ export default function App() {
     const whitePlayer = players.find((p) => p.id === targetMatch.whitePlayerId);
     const blackPlayer = players.find((p) => p.id === targetMatch.blackPlayerId);
 
-    // Remove from ledger (optimistic)
     setMatches((prev) => prev.filter((m) => m.id !== matchId));
 
-    // Rollback player ratings and stats (optimistic)
     setPlayers((prev) =>
       prev.map((p) => {
         if (p.id === targetMatch.whitePlayerId) {
@@ -378,51 +291,40 @@ export default function App() {
       })
     );
 
-    // Persist deletion and rollbacks to Cloud Firestore
     deleteMatchFromFirestore(targetMatch, whitePlayer, blackPlayer).catch((err) => {
       console.error('Failed to delete match from Firestore:', err);
     });
   };
 
-  // Handle updating an existing match result
+  // Handle updating an existing match
   const handleUpdateMatch = (originalMatch: ClubMatch, updatedMatch: ClubMatch) => {
     const whitePlayer = players.find((p) => p.id === updatedMatch.whitePlayerId);
     const blackPlayer = players.find((p) => p.id === updatedMatch.blackPlayerId);
 
-    const matchWithClub = { ...updatedMatch, clubId: activeClubId };
+    setMatches((prev) => prev.map((m) => (m.id === originalMatch.id ? updatedMatch : m)));
 
-    // 1. Update the match in the ledger
-    setMatches((prev) => prev.map((m) => (m.id === originalMatch.id ? matchWithClub : m)));
-
-    // 2. Adjust player ratings and records
     setPlayers((prev) => {
       let updatedList = prev.map((p) => {
         if (p.id === originalMatch.whitePlayerId) {
-          const isWin = originalMatch.result === '1-0';
-          const isDraw = originalMatch.result === '1/2-1/2';
-          const isLoss = originalMatch.result === '0-1';
           return {
             ...p,
             currentRating: p.currentRating - originalMatch.whiteDelta,
             gamesPlayed: Math.max(0, p.gamesPlayed - 1),
-            wins: isWin ? Math.max(0, p.wins - 1) : p.wins,
-            draws: isDraw ? Math.max(0, p.draws - 1) : p.draws,
-            losses: isLoss ? Math.max(0, p.losses - 1) : p.losses,
-            whiteWins: isWin ? Math.max(0, (p.whiteWins ?? 0) - 1) : p.whiteWins,
+            wins: originalMatch.result === '1-0' ? Math.max(0, p.wins - 1) : p.wins,
+            draws: originalMatch.result === '1/2-1/2' ? Math.max(0, p.draws - 1) : p.draws,
+            losses: originalMatch.result === '0-1' ? Math.max(0, p.losses - 1) : p.losses,
+            whiteWins: originalMatch.result === '1-0' ? Math.max(0, (p.whiteWins ?? 0) - 1) : p.whiteWins,
           };
         }
         if (p.id === originalMatch.blackPlayerId) {
-          const isWin = originalMatch.result === '0-1';
-          const isDraw = originalMatch.result === '1/2-1/2';
-          const isLoss = originalMatch.result === '1-0';
           return {
             ...p,
             currentRating: p.currentRating - originalMatch.blackDelta,
             gamesPlayed: Math.max(0, p.gamesPlayed - 1),
-            wins: isWin ? Math.max(0, p.wins - 1) : p.wins,
-            draws: isDraw ? Math.max(0, p.draws - 1) : p.draws,
-            losses: isLoss ? Math.max(0, p.losses - 1) : p.losses,
-            blackWins: isWin ? Math.max(0, (p.blackWins ?? 0) - 1) : p.blackWins,
+            wins: originalMatch.result === '0-1' ? Math.max(0, p.wins - 1) : p.wins,
+            draws: originalMatch.result === '1/2-1/2' ? Math.max(0, p.draws - 1) : p.draws,
+            losses: originalMatch.result === '1-0' ? Math.max(0, p.losses - 1) : p.losses,
+            blackWins: originalMatch.result === '0-1' ? Math.max(0, (p.blackWins ?? 0) - 1) : p.blackWins,
           };
         }
         return p;
@@ -431,36 +333,28 @@ export default function App() {
       updatedList = updatedList.map((p) => {
         if (p.id === updatedMatch.whitePlayerId) {
           const newRating = p.currentRating + updatedMatch.whiteDelta;
-          const isWin = updatedMatch.result === '1-0';
-          const isDraw = updatedMatch.result === '1/2-1/2';
-          const isLoss = updatedMatch.result === '0-1';
           return {
             ...p,
             currentRating: newRating,
             peakRating: Math.max(p.peakRating, newRating),
             gamesPlayed: p.gamesPlayed + 1,
-            wins: isWin ? p.wins + 1 : p.wins,
-            draws: isDraw ? p.draws + 1 : p.draws,
-            losses: isLoss ? p.losses + 1 : p.losses,
-            whiteWins: isWin ? (p.whiteWins ?? 0) + 1 : (p.whiteWins ?? 0),
-            lastActiveDate: updatedMatch.date,
+            wins: updatedMatch.result === '1-0' ? p.wins + 1 : p.wins,
+            draws: updatedMatch.result === '1/2-1/2' ? p.draws + 1 : p.draws,
+            losses: updatedMatch.result === '0-1' ? p.losses + 1 : p.losses,
+            whiteWins: updatedMatch.result === '1-0' ? (p.whiteWins ?? 0) + 1 : (p.whiteWins ?? 0),
           };
         }
         if (p.id === updatedMatch.blackPlayerId) {
           const newRating = p.currentRating + updatedMatch.blackDelta;
-          const isWin = updatedMatch.result === '0-1';
-          const isDraw = updatedMatch.result === '1/2-1/2';
-          const isLoss = updatedMatch.result === '1-0';
           return {
             ...p,
             currentRating: newRating,
             peakRating: Math.max(p.peakRating, newRating),
             gamesPlayed: p.gamesPlayed + 1,
-            wins: isWin ? p.wins + 1 : p.wins,
-            draws: isDraw ? p.draws + 1 : p.draws,
-            losses: isLoss ? p.losses + 1 : p.losses,
-            blackWins: isWin ? (p.blackWins ?? 0) + 1 : (p.blackWins ?? 0),
-            lastActiveDate: updatedMatch.date,
+            wins: updatedMatch.result === '0-1' ? p.wins + 1 : p.wins,
+            draws: updatedMatch.result === '1/2-1/2' ? p.draws + 1 : p.draws,
+            losses: updatedMatch.result === '1-0' ? p.losses + 1 : p.losses,
+            blackWins: updatedMatch.result === '0-1' ? (p.blackWins ?? 0) + 1 : (p.blackWins ?? 0),
           };
         }
         return p;
@@ -469,42 +363,21 @@ export default function App() {
       return updatedList;
     });
 
-    // Persist update in Cloud Firestore
-    updateMatchInFirestore(originalMatch, matchWithClub, whitePlayer, blackPlayer, activeClubId).catch((err) => {
+    updateMatchInFirestore(originalMatch, updatedMatch, whitePlayer, blackPlayer).catch((err) => {
       console.error('Failed to update match in Firestore:', err);
     });
   };
 
-  // Add new player to current club roster
+  // Add new player to roster
   const handleAddPlayer = (newPlayer: ClubPlayer) => {
-    const playerWithClub = { ...newPlayer, clubId: activeClubId };
-    setPlayers((prev) => [playerWithClub, ...prev]);
-    savePlayerToFirestore(playerWithClub, activeClubId).catch((err) => {
-      console.error('Failed to add player to Firestore:', err);
+    setPlayers((prev) => [...prev, newPlayer]);
+    savePlayerToFirestore(newPlayer).catch((err) => {
+      console.error('Failed to save new player to Firestore:', err);
     });
   };
 
-  // Export current club data to backup JSON
-  const handleExportData = () => {
-    const backup = {
-      exportDate: new Date().toISOString(),
-      clubId: currentClub.id,
-      clubName: currentClub.name,
-      city: currentClub.city,
-      players,
-      matches,
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${currentClub.id}_backup_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Reset all players in this club to 0 games played and 1400 starting Elo
-  const handleExecuteResetTo1400 = async () => {
+  // Execute full reset to 1400 baseline (Admin action)
+  const handleExecuteResetTo1400 = () => {
     const resetList = players.map((p) => ({
       ...p,
       currentRating: 1400,
@@ -521,101 +394,117 @@ export default function App() {
 
     setPlayers(resetList);
     setMatches([]);
-    localStorage.setItem(`club_elo_players_${activeClubId}`, JSON.stringify(resetList));
-    localStorage.setItem(`club_elo_matches_${activeClubId}`, JSON.stringify([]));
     setIsResetConfirmOpen(false);
 
-    try {
-      await resetAllClubRatingsInFirestore(activeClubId, resetList);
-    } catch (err) {
+    resetAllClubRatingsInFirestore(players).catch((err) => {
       console.error('Failed to reset ratings in Firestore:', err);
+    });
+  };
+
+  // Export current roster and matches as JSON
+  const handleExportData = () => {
+    const exportData = {
+      exportDate: new Date().toISOString(),
+      clubName: 'Gambit Elo Chess Club',
+      playersCount: players.length,
+      matchesCount: matches.length,
+      players,
+      matches,
+    };
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chess-club-elo-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Admin login success
+  const handleAdminLoginSuccess = () => {
+    setIsAdmin(true);
+    try {
+      localStorage.setItem('club_elo_is_admin_active', 'true');
+    } catch {
+      // Ignore
     }
   };
 
-  const handleAdminLoginSuccess = () => {
-    setIsAdmin(true);
-    localStorage.setItem('club_elo_is_admin_active', 'true');
-  };
-
+  // Admin logout
   const handleAdminLogout = () => {
     setIsAdmin(false);
-    localStorage.removeItem('club_elo_is_admin_active');
+    try {
+      localStorage.removeItem('club_elo_is_admin_active');
+    } catch {
+      // Ignore
+    }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500/30 selection:text-amber-200">
-      {/* Top Header Navigation */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-          {/* Zone 1: Brand & Club Selector Dropdown */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="flex items-center gap-2 font-bold text-white tracking-tight">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500 text-slate-950 font-black text-base shadow-sm">
-                ♔
-              </span>
-              <span className="hidden sm:inline-block font-display">ClubElo</span>
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
+      {/* Top Application Header */}
+      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
+          {/* Logo & Brand */}
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 font-bold shadow-lg shadow-amber-500/20 text-lg">
+              ♔
             </div>
-
-            <div className="h-5 w-px bg-slate-800 hidden sm:block" />
-
-            {/* Prominent Club Selector Dropdown */}
-            <ClubSelector
-              clubs={clubs}
-              currentClub={currentClub}
-              onSelectClub={handleSelectClub}
-              onCreateClubClick={() => setIsCreateClubOpen(true)}
-              isAdmin={isAdmin}
-              playerCount={players.length}
-              matchCount={matches.length}
-            />
-
-            {/* Quick Browse All Clubs button */}
-            <button
-              type="button"
-              onClick={() => setIsClubDirectoryOpen(true)}
-              className="hidden lg:inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-amber-400 transition-colors px-2 py-1 rounded-lg hover:bg-slate-900 border border-transparent hover:border-slate-800"
-              title="Browse full list of all hosted chess clubs"
-            >
-              <Building2 className="h-3.5 w-3.5" />
-              <span>Browse Clubs</span>
-            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold tracking-tight text-white text-base">
+                  Gambit Elo
+                </span>
+                <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-900 border border-slate-700/80 text-amber-400 px-1.5 py-0.5 rounded">
+                  Chess Club
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-400 block -mt-0.5">
+                Official Rating &amp; Standings System
+              </span>
+            </div>
           </div>
 
-          {/* Zone 2: Navigation Links */}
+          {/* Navigation Links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-300">
             <button
               onClick={() => setActiveTab('standings')}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 ${
+              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'standings' ? 'text-amber-400 font-semibold' : ''
               }`}
             >
-              Standings ({players.length})
+              <Trophy className="h-4 w-4" />
+              <span>Standings ({players.length})</span>
             </button>
             <button
               onClick={() => setActiveTab('matches')}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 ${
+              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'matches' ? 'text-amber-400 font-semibold' : ''
               }`}
             >
-              Match Ledger ({matches.length})
+              <History className="h-4 w-4" />
+              <span>Match Ledger ({matches.length})</span>
             </button>
             <button
               onClick={() => setActiveTab('stats')}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 ${
+              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
                 activeTab === 'stats' ? 'text-amber-400 font-semibold' : ''
               }`}
             >
-              Analytics
+              <BarChart3 className="h-4 w-4" />
+              <span>Analytics</span>
             </button>
           </nav>
 
-          {/* Zone 3: Actions & Admin Authentication */}
+          {/* Actions & Admin Authentication */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Versioning & Snapshots */}
             <button
               onClick={() => setIsVersionManagerOpen(true)}
               className="hidden sm:flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition-colors whitespace-nowrap shadow-sm"
-              title="Manage Snapshots and Version Checkpoints for this club"
+              title="Manage Snapshots and Version Checkpoints"
             >
               <Bookmark className="h-3.5 w-3.5" />
               <span className="hidden xl:inline">Snapshots</span>
@@ -641,18 +530,18 @@ export default function App() {
 
                 <button
                   onClick={() => setIsAdminModalOpen(true)}
-                  className="flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2.5 py-1.5 text-xs font-bold text-amber-300 hover:bg-amber-500/25 transition-colors"
-                  title="Admin Mode Active (Full write access for this club). Click to lock or switch credentials."
+                  className="flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 px-2.5 py-1.5 text-xs font-bold transition-colors"
+                  title="Admin Mode Active (Click to manage or lock)"
                 >
                   <Unlock className="h-3.5 w-3.5 text-amber-400" />
-                  <span className="hidden sm:inline">Admin</span>
+                  <span className="hidden sm:inline">Admin Mode</span>
                 </button>
               </>
             ) : (
               <button
                 onClick={() => setIsAdminModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 shadow hover:bg-amber-400 transition-all whitespace-nowrap shrink-0 active:scale-95"
-                title={`Enter admin passcode for ${currentClub.name} to record games or edit data`}
+                className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-slate-950 shadow hover:bg-amber-400 transition-all whitespace-nowrap shrink-0 active:scale-95"
+                title="Enter admin password to unlock data modifications"
               >
                 <Lock className="h-3.5 w-3.5" />
                 <span>Admin Login</span>
@@ -664,19 +553,13 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        {/* Club Brand Header & Metadata Banner */}
+        {/* Club Brand Header & Overview Banner */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800/80 pb-5">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-display">
-                {currentClub.name}
+                Club Championship Leaderboard
               </h1>
-              {currentClub.city && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-0.5 text-xs font-medium text-slate-300">
-                  <MapPin className="h-3 w-3 text-amber-400" />
-                  {currentClub.city}
-                </span>
-              )}
               {!isAdmin && (
                 <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700">
                   View-Only Mode
@@ -684,49 +567,37 @@ export default function App() {
               )}
             </div>
 
-            {currentClub.description && (
-              <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
-                {currentClub.description}
-              </p>
-            )}
+            <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+              Real-time Elo chess ratings calculated from official club match records and tournament rounds.
+            </p>
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 pt-1">
-              <span className="font-semibold text-slate-300">{players.length} Club Members</span>
+              <span className="font-semibold text-slate-300">{players.length} Active Members</span>
               <span aria-hidden="true">·</span>
               <span>{matches.length} Rated Games Recorded</span>
               <span aria-hidden="true">·</span>
-              <span>Independent Rating Pool</span>
-              <span aria-hidden="true">·</span>
               <span className="text-emerald-400 flex items-center gap-1">
                 <Cloud className="h-3 w-3" />
-                Firestore Isolated
+                Firestore Live Database
               </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-center">
             <button
-              onClick={() => setIsClubDirectoryOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-            >
-              <Building2 className="h-3.5 w-3.5" />
-              <span>Switch Club</span>
-            </button>
-
-            <button
               onClick={handleExportData}
               className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-              title="Download JSON Backup of this club's records"
+              title="Download JSON Backup of all records"
             >
               <Download className="h-3.5 w-3.5" />
-              <span>Export</span>
+              <span>Export Backup</span>
             </button>
 
             {isAdmin && (
               <button
                 onClick={() => setIsResetConfirmOpen(true)}
                 className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-semibold text-rose-300 hover:text-white hover:bg-rose-500/20 transition-colors"
-                title={`Reset ${currentClub.name} members to 0 games and 1400 Elo`}
+                title="Reset members to 0 games and 1400 Elo"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
                 <span>Reset Roster</span>
@@ -763,139 +634,201 @@ export default function App() {
           </button>
         </div>
 
-        {/* Active Tab View */}
-        {activeTab === 'standings' ? (
-          <div className="space-y-6">
-            <ClubStatsOverview players={players} matches={matches} />
+        {/* View-Only Mode Information Banner for Visitors */}
+        {!isAdmin && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3.5 text-xs text-slate-300 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
+                <Lock className="h-3.5 w-3.5" />
+              </div>
+              <p className="text-xs text-slate-300 leading-normal">
+                <strong className="text-white">View-Only Public Access:</strong> You can browse all leaderboards, player stats, and match histories. To enter match scores or register new players, click <strong className="text-amber-300">Admin Login</strong>.
+              </p>
+            </div>
+            <button
+              onClick={() => setIsAdminModalOpen(true)}
+              className="shrink-0 text-xs font-bold text-amber-400 hover:text-amber-300 hover:underline px-2 py-1"
+            >
+              Sign In
+            </button>
+          </div>
+        )}
+
+        {/* Tab 1: Standings Leaderboard */}
+        {activeTab === 'standings' && (
+          <div className="space-y-4">
             <ClubStandingsTable
               players={players}
               isAdmin={isAdmin}
               onSelectPlayer={(p) => setSelectedPlayer(p)}
-              onRecordMatchForPlayer={() => setIsEnterResultOpen(true)}
-              onEditPlayer={(p) => setEditingPlayer(p)}
-              onDeletePlayer={handleDeletePlayer}
+              onRecordMatchForPlayer={(p) => {
+                if (!isAdmin) {
+                  setIsAdminModalOpen(true);
+                  return;
+                }
+                setIsEnterResultOpen(true);
+              }}
+              onEditPlayer={(p) => {
+                if (!isAdmin) {
+                  setIsAdminModalOpen(true);
+                  return;
+                }
+                setEditingPlayer(p);
+              }}
+              onDeletePlayer={(playerId) => {
+                if (!isAdmin) {
+                  setIsAdminModalOpen(true);
+                  return;
+                }
+                handleDeletePlayer(playerId);
+              }}
             />
           </div>
-        ) : activeTab === 'matches' ? (
-          <MatchHistoryLedger
-            matches={matches}
-            isAdmin={isAdmin}
-            onDeleteMatch={handleDeleteMatch}
-            onEditMatch={(m) => setEditingMatch(m)}
-          />
-        ) : (
-          <div className="space-y-6">
+        )}
+
+        {/* Tab 2: Match History Ledger */}
+        {activeTab === 'matches' && (
+          <div className="space-y-4">
+            <MatchHistoryLedger
+              matches={matches}
+              isAdmin={isAdmin}
+              onDeleteMatch={(matchId) => {
+                if (!isAdmin) {
+                  setIsAdminModalOpen(true);
+                  return;
+                }
+                handleDeleteMatch(matchId);
+              }}
+              onEditMatch={(m) => {
+                if (!isAdmin) {
+                  setIsAdminModalOpen(true);
+                  return;
+                }
+                setEditingMatch(m);
+              }}
+            />
+          </div>
+        )}
+
+        {/* Tab 3: Analytics & Visual Stats */}
+        {activeTab === 'stats' && (
+          <div className="space-y-4">
             <ClubStatsOverview players={players} matches={matches} />
-            <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
-              <h3 className="text-base font-bold text-white mb-2">Independent Club Rating System</h3>
-              <p className="text-xs text-slate-300 leading-relaxed max-w-3xl mb-4">
-                Each chess club on ClubElo operates as a completely separate rating pool. Matches recorded in {currentClub.name} only alter ratings within this club&apos;s membership ledger.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div className="rounded-lg bg-slate-950/70 p-3 border border-slate-800">
-                  <span className="font-semibold text-amber-400 block mb-1">Isolated Leaderboards</span>
-                  <span className="text-slate-400 text-[11px]">
-                    Players registered in {currentClub.name} compete only against fellow club attendees, preventing cross-organization rating distortion.
-                  </span>
-                </div>
-                <div className="rounded-lg bg-slate-950/70 p-3 border border-slate-800">
-                  <span className="font-semibold text-amber-400 block mb-1">Club Passcode Security</span>
-                  <span className="text-slate-400 text-[11px]">
-                    Club administrators can log in using their own club-specific secret key to record matches and manage member statistics.
-                  </span>
-                </div>
-                <div className="rounded-lg bg-slate-950/70 p-3 border border-slate-800">
-                  <span className="font-semibold text-amber-400 block mb-1">Real-Time Cloud Sync</span>
-                  <span className="text-slate-400 text-[11px]">
-                    All matches, Elo updates, and club snapshots are synced in real-time to Google Cloud Firestore with zero data leakage between clubs.
-                  </span>
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </main>
 
       {/* Footer */}
-      <footer className="mt-auto border-t border-slate-800/80 bg-slate-950 py-5 text-center text-xs text-slate-500">
-        <div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>ClubElo Manager · Multi-Club Chess Attendance & Elo Rating System</span>
-          <span className="text-slate-400 font-mono">
-            {currentClub.name} · {players.length} Members · {matches.length} Games Tracked
-          </span>
+      <footer className="mt-auto border-t border-slate-900 bg-slate-950 px-4 py-6 text-center text-xs text-slate-500">
+        <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p>© {new Date().getFullYear()} Gambit Elo Chess Club · All ratings persisted to Cloud Firestore.</p>
+          <div className="flex items-center gap-4 text-[11px]">
+            <span className="flex items-center gap-1.5 text-slate-400">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block"></span>
+              Firestore Active
+            </span>
+            <button
+              onClick={() => setIsAdminModalOpen(true)}
+              className="text-slate-400 hover:text-amber-400 transition-colors"
+            >
+              {isAdmin ? 'Admin Mode (Active)' : 'Admin Login'}
+            </button>
+          </div>
         </div>
       </footer>
 
-      {/* Modals */}
-      <EnterResultModal
-        isOpen={isEnterResultOpen}
-        onClose={() => setIsEnterResultOpen(false)}
-        players={players}
-        onSaveMatch={handleSaveMatch}
-        defaultRoundName={`${currentClub.name} - Round ${Math.floor(matches.length / 10) + 1}`}
-      />
+      {/* Modal: Enter Match Result */}
+      {isAdmin && (
+        <EnterResultModal
+          isOpen={isEnterResultOpen}
+          onClose={() => setIsEnterResultOpen(false)}
+          players={players}
+          onSaveMatch={handleSaveMatch}
+        />
+      )}
 
-      <AddPlayerModal
-        isOpen={isAddPlayerOpen}
-        onClose={() => setIsAddPlayerOpen(false)}
-        onAddPlayer={handleAddPlayer}
-      />
+      {/* Modal: Add New Player */}
+      {isAdmin && (
+        <AddPlayerModal
+          isOpen={isAddPlayerOpen}
+          onClose={() => setIsAddPlayerOpen(false)}
+          onAddPlayer={handleAddPlayer}
+        />
+      )}
 
+      {/* Modal: Player Details & Elo Chart */}
       <PlayerDetailModal
         player={selectedPlayer}
-        isOpen={selectedPlayer !== null}
+        isOpen={Boolean(selectedPlayer)}
         onClose={() => setSelectedPlayer(null)}
         matches={matches}
         isAdmin={isAdmin}
-        onRecordMatchForPlayer={() => setIsEnterResultOpen(true)}
-        onEditPlayer={(p) => setEditingPlayer(p)}
-        onEditMatch={(m) => setEditingMatch(m)}
+        onRecordMatchForPlayer={(p) => {
+          if (!isAdmin) {
+            setIsAdminModalOpen(true);
+            return;
+          }
+          setIsEnterResultOpen(true);
+        }}
+        onEditPlayer={(p) => {
+          if (!isAdmin) {
+            setIsAdminModalOpen(true);
+            return;
+          }
+          setSelectedPlayer(null);
+          setEditingPlayer(p);
+        }}
+        onEditMatch={(m) => {
+          if (!isAdmin) {
+            setIsAdminModalOpen(true);
+            return;
+          }
+          setSelectedPlayer(null);
+          setEditingMatch(m);
+        }}
       />
 
-      <EditPlayerModal
-        player={editingPlayer}
-        isOpen={editingPlayer !== null}
-        onClose={() => setEditingPlayer(null)}
-        onUpdatePlayer={handleUpdatePlayer}
-        onDeletePlayer={handleDeletePlayer}
-      />
+      {/* Modal: Edit Player */}
+      {isAdmin && (
+        <EditPlayerModal
+          player={editingPlayer}
+          isOpen={Boolean(editingPlayer)}
+          onClose={() => setEditingPlayer(null)}
+          onUpdatePlayer={handleUpdatePlayer}
+          onDeletePlayer={handleDeletePlayer}
+        />
+      )}
 
-      <EditResultModal
-        isOpen={editingMatch !== null}
-        onClose={() => setEditingMatch(null)}
-        match={editingMatch}
-        players={players}
-        onUpdateMatch={handleUpdateMatch}
-      />
+      {/* Modal: Edit Match Result */}
+      {isAdmin && (
+        <EditResultModal
+          isOpen={Boolean(editingMatch)}
+          onClose={() => setEditingMatch(null)}
+          match={editingMatch}
+          players={players}
+          onUpdateMatch={handleUpdateMatch}
+        />
+      )}
 
+      {/* Modal: Version Manager & Snapshots */}
       <VersionManagerModal
         isOpen={isVersionManagerOpen}
         onClose={() => setIsVersionManagerOpen(false)}
         currentPlayers={players}
         currentMatches={matches}
         isAdmin={isAdmin}
-        clubId={currentClub.id}
-        clubName={currentClub.name}
-        onRestoreState={(newPlayers, newMatches) => {
-          setPlayers(newPlayers);
-          setMatches(newMatches);
-          restoreSnapshotToFirestore(
-            {
-              id: `restored_${Date.now()}`,
-              clubId: currentClub.id,
-              name: `Restored ${currentClub.name} State`,
-              createdAt: new Date().toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              }),
-              playersCount: newPlayers.length,
-              matchesCount: newMatches.length,
-              players: newPlayers,
-              matches: newMatches,
-            },
-            currentClub.id
-          ).catch((err) => {
+        onRestoreState={(restoredPlayers, restoredMatches) => {
+          setPlayers(restoredPlayers);
+          setMatches(restoredMatches);
+          restoreSnapshotToFirestore({
+            id: `restored_${Date.now()}`,
+            name: 'Restored Version',
+            createdAt: new Date().toISOString(),
+            playersCount: restoredPlayers.length,
+            matchesCount: restoredMatches.length,
+            players: restoredPlayers,
+            matches: restoredMatches,
+          }).catch((err) => {
             console.error('Failed to sync restored state to Firestore:', err);
           });
         }}
@@ -906,28 +839,8 @@ export default function App() {
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}
         isAdmin={isAdmin}
-        currentClub={currentClub}
         onLoginSuccess={handleAdminLoginSuccess}
         onLogout={handleAdminLogout}
-      />
-
-      {/* Create New Club Modal */}
-      <CreateClubModal
-        isOpen={isCreateClubOpen}
-        onClose={() => setIsCreateClubOpen(false)}
-        onClubCreated={handleClubCreated}
-        existingClubs={clubs}
-      />
-
-      {/* Browse All Clubs Directory Modal */}
-      <ClubDirectoryModal
-        isOpen={isClubDirectoryOpen}
-        onClose={() => setIsClubDirectoryOpen(false)}
-        clubs={clubs}
-        currentClub={currentClub}
-        onSelectClub={handleSelectClub}
-        onCreateClubClick={() => setIsCreateClubOpen(true)}
-        isAdmin={isAdmin}
       />
 
       {/* Reset Confirmation Modal */}
@@ -946,15 +859,15 @@ export default function App() {
                 <AlertTriangle className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Reset {currentClub.name} Roster</h3>
-                <p className="text-xs text-slate-400">Restore members of this club to baseline</p>
+                <h3 className="text-base font-bold text-white">Reset Club Roster</h3>
+                <p className="text-xs text-slate-400">Restore members to clean baseline</p>
               </div>
             </div>
 
             <p className="text-xs text-slate-300 mb-5 leading-relaxed">
-              This will reset all members of <strong className="text-white">{currentClub.name}</strong> back to{' '}
+              This will reset all club members back to{' '}
               <strong className="text-amber-300">0 games played</strong> and{' '}
-              <strong className="text-amber-300">1400 starting Elo</strong>. All match records for this club will be cleared. Other clubs remain unaffected.
+              <strong className="text-amber-300">1400 starting Elo</strong>. All match records will be cleared from Firestore.
             </p>
 
             <div className="flex items-center justify-end gap-2.5">
@@ -971,7 +884,7 @@ export default function App() {
                 className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-lg shadow-amber-500/20"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
-                <span>Yes, Reset {currentClub.name}</span>
+                <span>Yes, Reset Roster</span>
               </button>
             </div>
           </div>

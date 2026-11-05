@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Unlock, Key, Eye, EyeOff, ShieldCheck, AlertCircle, X, Loader2, CheckCircle2, Info, Building2 } from 'lucide-react';
-import { ChessClub } from '../types/club';
+import { Lock, Unlock, Key, Eye, EyeOff, ShieldCheck, AlertCircle, X, Loader2, CheckCircle2, Info } from 'lucide-react';
 
 interface AdminLoginModalProps {
   isOpen: boolean;
   onClose: () => void;
   isAdmin: boolean;
-  currentClub?: ChessClub | null;
   onLoginSuccess: () => void;
   onLogout: () => void;
 }
@@ -15,7 +13,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   isOpen,
   onClose,
   isAdmin,
-  currentClub,
   onLoginSuccess,
   onLogout,
 }) => {
@@ -29,7 +26,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
     hasAdminPasswordConfigured: boolean;
   }>({ loaded: false, hasAdminPasswordConfigured: false });
 
-  // Query server health/config status when opening modal
+  // Query server health status when opening modal
   useEffect(() => {
     if (isOpen) {
       setPasscode('');
@@ -37,7 +34,6 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
       setErrorDetails(null);
       setIsVerifying(false);
 
-      // Check server env configuration status
       fetch('/api/health')
         .then((res) => res.json())
         .then((data) => {
@@ -47,7 +43,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           });
         })
         .catch((err) => {
-          console.warn('[Admin Modal] Unable to fetch /api/health status:', err);
+          console.warn('[Admin Modal] Unable to fetch /api/health:', err);
           setEnvStatus({ loaded: true, hasAdminPasswordConfigured: false });
         });
     }
@@ -61,7 +57,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
 
     if (!entered) {
       setError('Password Required');
-      setErrorDetails('Please enter the club administrator passcode or master key.');
+      setErrorDetails('Please enter the administrator password.');
       return;
     }
 
@@ -77,16 +73,13 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         },
         body: JSON.stringify({
           password: entered,
-          clubPasscode: currentClub?.adminPasscode,
-          clubName: currentClub?.name,
-          clubId: currentClub?.id,
         }),
       });
 
       const data = await response.json().catch(() => null);
 
       if (response.ok && data?.success) {
-        console.log('[Admin Login] Verified successfully! Auth mode:', data?.authMode);
+        console.log('[Admin Login] Verified successfully.');
         setError(null);
         setErrorDetails(null);
         onLoginSuccess();
@@ -96,17 +89,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           httpStatus: response.status,
           responseBody: data,
           attemptedLength: entered.length,
-          clubName: currentClub?.name,
         });
 
         setError('Invalid Password');
-        if (data?.hint) {
-          setErrorDetails(data.hint);
-        } else if (currentClub?.adminPasscode) {
-          setErrorDetails(`The password entered does not match the passcode for ${currentClub.name} or master credentials.`);
-        } else {
-          setErrorDetails('The password entered does not match required credentials.');
-        }
+        setErrorDetails(data?.hint || 'The password entered does not match. Default fallback is: chessadmin123');
       }
     } catch (err) {
       console.error('[Admin Login] Network or server error during verification:', err);
@@ -118,8 +104,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   };
 
   const useFallbackPasscode = () => {
-    const code = currentClub?.adminPasscode || 'chessadmin123';
-    setPasscode(code);
+    setPasscode('chessadmin123');
     setError(null);
     setErrorDetails(null);
   };
@@ -149,37 +134,17 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
           </div>
           <div>
             <h3 className="text-base font-bold text-white">
-              {isAdmin ? 'Admin Mode Active' : `Club Administrator: ${currentClub?.name || 'Chess Club'}`}
+              {isAdmin ? 'Admin Mode Active' : 'Admin Authentication'}
             </h3>
             <p className="text-xs text-slate-400">
               {isAdmin
-                ? 'Full write permissions enabled. You can record games, edit records, and manage rosters.'
-                : 'Enter your club-specific admin passcode or master credentials to unlock controls.'}
+                ? 'Editing permissions unlocked. You can add members, record matches, and edit data.'
+                : 'Enter the admin password to unlock data entry and editing privileges.'}
             </p>
           </div>
         </div>
 
-        {/* Active Club Banner */}
-        {currentClub && (
-          <div className="mb-4 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-xs">
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 font-bold text-sm">
-                ♔
-              </div>
-              <div>
-                <span className="font-bold text-white block">{currentClub.name}</span>
-                {currentClub.city && <span className="text-slate-400 text-[11px]">{currentClub.city}</span>}
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] font-mono bg-slate-800/80 text-amber-300 px-2 py-0.5 rounded border border-slate-700">
-                Independent Club
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Environment Status Badge / Indicator */}
+        {/* Environment Status Badge */}
         {!isAdmin && (
           <div className="mb-4">
             {envStatus.loaded && (
@@ -215,11 +180,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                   <p className="text-[11px] leading-relaxed text-slate-300">
                     {envStatus.hasAdminPasswordConfigured ? (
                       <>
-                        Custom <code className="rounded bg-slate-900/80 px-1 py-0.5 font-mono text-emerald-300">ADMIN_PASSWORD</code> is loaded, and universal fallback passcode{' '}
+                        Environment password loaded, or use fallback{' '}
                         <code className="rounded bg-slate-900/80 px-1.5 py-0.5 font-mono font-bold text-amber-300">
                           chessadmin123
-                        </code>{' '}
-                        is always accepted.
+                        </code>
                       </>
                     ) : (
                       <>
@@ -246,7 +210,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             <div className="flex flex-col flex-1">
               <span className="font-bold text-rose-200">{error}</span>
               <span className="text-[11px] text-rose-300/90 leading-relaxed mt-0.5">
-                {errorDetails || 'The password entered does not match. Try using the default fallback passcode: chessadmin123'}
+                {errorDetails}
               </span>
               <button
                 type="button"
@@ -265,10 +229,10 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-4 text-xs space-y-2">
               <div className="flex items-center gap-2 font-semibold text-emerald-300">
                 <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                <span>You are currently signed in as Administrator</span>
+                <span>Signed in as Administrator</span>
               </div>
               <p className="text-slate-300 leading-relaxed text-[11px]">
-                You have write access across all tables, rating calculators, and snapshot tools. Regular club members visiting this link are in View-Only mode.
+                You have full write access: record match results, add and edit player ratings, reset rosters, and manage checkpoints.
               </p>
             </div>
 
@@ -298,7 +262,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-semibold text-slate-300">
-                  Admin Passcode / Secret Key
+                  Admin Password
                 </label>
                 <button
                   type="button"
@@ -341,7 +305,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
               <div className="space-y-0.5">
                 <span className="text-slate-300 font-medium">Dual Access Support: </span>
                 <p className="text-slate-400 leading-normal">
-                  You can sign in using either your environment&apos;s <code className="text-amber-300 font-mono bg-slate-800/80 px-1 py-0.5 rounded text-[11px]">ADMIN_PASSWORD</code> or the universal master passcode <code className="text-amber-300 font-mono bg-slate-800/80 px-1 py-0.5 rounded text-[11px]">chessadmin123</code>.
+                  You can sign in using your <code className="text-amber-300 font-mono bg-slate-800/80 px-1 py-0.5 rounded text-[11px]">ADMIN_PASSWORD</code> environment variable or the fallback passcode <code className="text-amber-300 font-mono bg-slate-800/80 px-1 py-0.5 rounded text-[11px]">chessadmin123</code>.
                 </p>
               </div>
             </div>

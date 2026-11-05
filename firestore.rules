@@ -23,17 +23,9 @@ service cloud.firestore {
       return val is number && val >= minVal && val <= maxVal;
     }
 
-    function isValidClub(data, id) {
-      return data.keys().hasAll(['id', 'name', 'adminPasscode', 'createdAt']) &&
-        data.id == id &&
-        isValidString(data.name, 1, 120) &&
-        isValidString(data.adminPasscode, 3, 100);
-    }
-
     function isValidPlayer(data, id) {
       return data.keys().hasAll(['id', 'name', 'currentRating', 'initialRating', 'peakRating', 'category', 'gamesPlayed', 'wins', 'draws', 'losses']) &&
         data.id == id &&
-        (!('clubId' in data) || isValidString(data.clubId, 1, 128)) &&
         isValidString(data.name, 1, 100) &&
         isValidNumber(data.currentRating, 100, 3500) &&
         isValidNumber(data.initialRating, 100, 3500) &&
@@ -48,7 +40,6 @@ service cloud.firestore {
     function isValidMatch(data, id) {
       return data.keys().hasAll(['id', 'date', 'whitePlayerId', 'whitePlayerName', 'blackPlayerId', 'blackPlayerName', 'result', 'timeControl']) &&
         data.id == id &&
-        (!('clubId' in data) || isValidString(data.clubId, 1, 128)) &&
         isValidString(data.date, 1, 40) &&
         isValidString(data.whitePlayerId, 1, 128) &&
         isValidString(data.whitePlayerName, 1, 100) &&
@@ -63,20 +54,12 @@ service cloud.firestore {
     function isValidSnapshot(data, id) {
       return data.keys().hasAll(['id', 'name', 'createdAt', 'playersCount', 'matchesCount']) &&
         data.id == id &&
-        (!('clubId' in data) || isValidString(data.clubId, 1, 128)) &&
         isValidString(data.name, 1, 120) &&
         isValidNumber(data.playersCount, 0, 20000) &&
         isValidNumber(data.matchesCount, 0, 200000);
     }
 
-    // Clubs Collection: Public read for club directory, validated writes
-    match /clubs/{clubId} {
-      allow read: if true;
-      allow create, update: if isValidId(clubId) && isValidClub(incoming(), clubId);
-      allow delete: if true;
-    }
-
-    // Players Collection: Public read for club members, validated writes
+    // Players Collection: Public read for leaderboard, validated writes
     match /players/{playerId} {
       allow read: if true;
       allow create, update: if isValidId(playerId) && isValidPlayer(incoming(), playerId);

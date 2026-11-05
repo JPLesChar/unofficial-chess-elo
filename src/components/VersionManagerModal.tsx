@@ -20,8 +20,6 @@ interface VersionManagerModalProps {
   currentPlayers: ClubPlayer[];
   currentMatches: ClubMatch[];
   isAdmin?: boolean;
-  clubId?: string;
-  clubName?: string;
   onRestoreState: (players: ClubPlayer[], matches: ClubMatch[]) => void;
 }
 
@@ -31,14 +29,12 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
   currentPlayers,
   currentMatches,
   isAdmin = false,
-  clubId = 'geneva-chess-club',
-  clubName = 'Club',
   onRestoreState,
 }) => {
   const [snapshotName, setSnapshotName] = useState<string>('');
   const [snapshots, setSnapshots] = useState<ClubSnapshot[]>(() => {
     try {
-      const saved = localStorage.getItem(`club_elo_snapshots_${clubId}`) || localStorage.getItem('club_elo_snapshots');
+      const saved = localStorage.getItem('club_elo_snapshots');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -48,7 +44,7 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
   // Fetch Firestore snapshots when modal opens
   React.useEffect(() => {
     if (isOpen) {
-      getSnapshotsFromFirestore(clubId)
+      getSnapshotsFromFirestore()
         .then((remoteList) => {
           if (remoteList && remoteList.length > 0) {
             const mapped: ClubSnapshot[] = remoteList.map((s) => ({
@@ -61,12 +57,12 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
               matches: s.matches,
             }));
             setSnapshots(mapped);
-            localStorage.setItem(`club_elo_snapshots_${clubId}`, JSON.stringify(mapped));
+            localStorage.setItem('club_elo_snapshots', JSON.stringify(mapped));
           }
         })
         .catch((err) => console.log('Could not load Firestore snapshots:', err));
     }
-  }, [isOpen, clubId]);
+  }, [isOpen]);
 
   const [masterVersion, setMasterVersion] = useState<ClubSnapshot | null>(() => {
     try {
@@ -146,20 +142,19 @@ export const VersionManagerModal: React.FC<VersionManagerModalProps> = ({
 
     const updated = [newSnapshot, ...snapshots];
     setSnapshots(updated);
-    localStorage.setItem(`club_elo_snapshots_${clubId}`, JSON.stringify(updated));
+    localStorage.setItem('club_elo_snapshots', JSON.stringify(updated));
     setSnapshotName('');
 
     // Persist to Cloud Firestore
     saveSnapshotToFirestore({
       id: newSnapshot.id,
-      clubId,
       name: newSnapshot.name,
       createdAt: newSnapshot.date,
       playersCount: newSnapshot.playersCount,
       matchesCount: newSnapshot.matchesCount,
       players: newSnapshot.players,
       matches: newSnapshot.matches,
-    }, clubId)
+    })
       .then(() => showFeedback(`Saved to Cloud & Snapshot: "${name}"`))
       .catch((err) => {
         console.error('Firestore snapshot save err:', err);

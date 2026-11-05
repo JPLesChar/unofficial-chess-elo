@@ -14,7 +14,7 @@ async function startServer() {
   const app = express();
   app.use(express.json());
 
-  // Health check endpoint
+  // Health check endpoint with admin password status
   app.get('/api/health', (_req, res) => {
     const isEnvSet = Boolean(process.env.ADMIN_PASSWORD && process.env.ADMIN_PASSWORD.trim().length > 0);
     res.json({
@@ -25,9 +25,9 @@ async function startServer() {
     });
   });
 
-  // Verify Admin password against ADMIN_PASSWORD, club-specific passcode, or fallback
+  // Verify Admin password against ADMIN_PASSWORD or fallback passcode
   app.post('/api/admin/verify', (req, res) => {
-    const { password, clubPasscode, clubName } = req.body || {};
+    const { password } = req.body || {};
     const rawEnvPassword = process.env.ADMIN_PASSWORD || '';
     const configuredPassword = rawEnvPassword.trim().replace(/^["']|["']$/g, '');
     const isEnvSet = configuredPassword.length > 0;
@@ -40,28 +40,24 @@ async function startServer() {
 
     const trimmedPassword = password.trim().replace(/^["']|["']$/g, '');
 
-    // 1. Master Fallback check
+    // 1. Fallback passcode check
     const matchesFallback = trimmedPassword === defaultFallback;
     // 2. Global ENV password check
     const matchesEnv = isEnvSet && (trimmedPassword === configuredPassword || trimmedPassword.toLowerCase() === configuredPassword.toLowerCase());
-    // 3. Club-specific admin passcode check
-    const cleanClubPasscode = typeof clubPasscode === 'string' ? clubPasscode.trim().replace(/^["']|["']$/g, '') : '';
-    const matchesClub = cleanClubPasscode.length > 0 && (trimmedPassword === cleanClubPasscode || trimmedPassword.toLowerCase() === cleanClubPasscode.toLowerCase());
 
-    if (matchesFallback || matchesEnv || matchesClub) {
-      console.log(`[Admin Auth Success] Admin unlocked successfully. (Auth mode: ${matchesClub ? `Club-specific passcode for ${clubName || 'Club'}` : matchesFallback ? 'Master fallback "chessadmin123"' : 'ADMIN_PASSWORD env variable'})`);
+    if (matchesFallback || matchesEnv) {
+      console.log(`[Admin Auth Success] Admin mode unlocked. (Auth source: ${matchesFallback ? 'Fallback passcode "chessadmin123"' : 'ADMIN_PASSWORD environment variable'})`);
       return res.json({
         success: true,
         isEnvConfigured: isEnvSet,
-        authMode: matchesClub ? 'club' : matchesFallback ? 'fallback' : 'env',
+        authMode: matchesFallback ? 'fallback' : 'env',
       });
     }
 
-    // Detailed error logging on password mismatch so admin can see what went wrong in logs
+    // Detailed error logging on password mismatch so admin can see what went wrong
     console.error(
       `[Admin Auth Failed] Password check failed! ` +
-      `Reason: Provided password does not match club admin passcode or master fallback. ` +
-      `[Club: ${clubName || 'None'}] ` +
+      `Reason: Provided password does not match expected admin passcode. ` +
       `[Env Variable ADMIN_PASSWORD set: ${isEnvSet}] ` +
       `[Provided password length: ${trimmedPassword.length}]`
     );
@@ -70,7 +66,7 @@ async function startServer() {
       success: false,
       error: 'Invalid Password',
       isEnvConfigured: isEnvSet,
-      hint: cleanClubPasscode ? 'Enter this club’s admin passcode or master key: chessadmin123' : 'You can always use the default admin passcode: chessadmin123',
+      hint: isEnvSet ? 'ADMIN_PASSWORD is set in environment, or use the fallback passcode: chessadmin123' : 'Use default passcode: chessadmin123',
     });
   });
 

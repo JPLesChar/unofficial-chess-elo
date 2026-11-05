@@ -1,28 +1,11 @@
 {
   "entities": {
-    "Club": {
-      "title": "Club",
-      "description": "A chess club entity with its own independent roster, matches, and admin passcode",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string", "description": "Unique club identifier (slug or UUID)" },
-        "name": { "type": "string", "description": "Official club display name" },
-        "city": { "type": "string", "description": "Club city or location" },
-        "description": { "type": "string", "description": "Short description of the club" },
-        "adminPasscode": { "type": "string", "description": "Club-specific administrator passcode" },
-        "createdAt": { "type": "string", "description": "ISO creation date" },
-        "playerCount": { "type": "number", "description": "Total registered players in the club" },
-        "matchCount": { "type": "number", "description": "Total recorded matches in the club" }
-      },
-      "required": ["id", "name", "adminPasscode", "createdAt"]
-    },
     "Player": {
       "title": "Player",
       "description": "A chess club player with Elo rating and match performance statistics",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique player ID (UUID or slug)" },
-        "clubId": { "type": "string", "description": "ID of the club this player belongs to" },
         "name": { "type": "string", "description": "Full player display name" },
         "currentRating": { "type": "number", "description": "Current active Elo rating" },
         "initialRating": { "type": "number", "description": "Starting Elo rating (e.g. 1400)" },
@@ -44,11 +27,10 @@
     },
     "Match": {
       "title": "Match",
-      "description": "A club chess match between two players with ratings and Elo adjustments",
+      "description": "A chess match between two club players with ratings and Elo adjustments",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique match record ID" },
-        "clubId": { "type": "string", "description": "ID of the club this match belongs to" },
         "date": { "type": "string", "description": "ISO date string or YYYY-MM-DD format" },
         "boardNumber": { "type": "number", "description": "Optional board assignment number" },
         "whitePlayerId": { "type": "string", "description": "Player ID for White" },
@@ -71,11 +53,10 @@
     },
     "VersionSnapshot": {
       "title": "VersionSnapshot",
-      "description": "Club rating and roster backup snapshot",
+      "description": "Rating and roster backup snapshot",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Snapshot ID" },
-        "clubId": { "type": "string", "description": "ID of the club this snapshot belongs to" },
         "name": { "type": "string", "description": "Descriptive snapshot title" },
         "description": { "type": "string", "description": "Description of the milestone or season" },
         "createdAt": { "type": "string", "description": "ISO timestamp of creation" },
@@ -88,10 +69,6 @@
     }
   },
   "firestore": {
-    "/clubs/{clubId}": {
-      "schema": { "$ref": "#/entities/Club" },
-      "description": "Persisted chess clubs with their respective metadata and credentials"
-    },
     "/players/{playerId}": {
       "schema": { "$ref": "#/entities/Player" },
       "description": "Persisted chess club player documents containing Elo ratings and stats"
